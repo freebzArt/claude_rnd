@@ -1,0 +1,5 @@
+{
+  "name": "ptrack",
+  "version-string": "0.1.0",
+  "dependencies": ["eigen3", "openexr", "nlohmann-json", "doctest"]
+}

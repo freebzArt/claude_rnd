@@ -1,0 +1,47 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "ci",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PTRACK_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "windows-vcpkg",
+      "inherits": "ci",
+      "toolchainFile": "$env{VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": { "PTRACK_WARNINGS_AS_ERRORS": "OFF" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "ci", "configurePreset": "ci" },
+    { "name": "windows-vcpkg", "configurePreset": "windows-vcpkg" }
+  ],
+  "testPresets": [
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "ci", "configurePreset": "ci", "output": { "outputOnFailure": true } },
+    { "name": "windows-vcpkg", "configurePreset": "windows-vcpkg", "output": { "outputOnFailure": true } }
+  ]
+}

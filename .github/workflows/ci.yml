@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libeigen3-dev libopenexr-dev nlohmann-json3-dev doctest-dev
+      - name: Configure
+        run: cmake --preset ci
+      - name: Build
+        run: cmake --build --preset ci
+      - name: Test
+        run: ctest --preset ci
+
+  macos:
+    runs-on: macos-14 # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install ninja eigen openexr nlohmann-json doctest
+      - name: Configure
+        run: cmake --preset ci
+      - name: Build
+        run: cmake --build --preset ci
+      - name: Test
+        run: ctest --preset ci
+
+  windows:
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure (vcpkg manifest)
+        run: cmake --preset windows-vcpkg
+      - name: Build
+        run: cmake --build --preset windows-vcpkg
+      - name: Test
+        run: ctest --preset windows-vcpkg
