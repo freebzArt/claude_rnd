@@ -1,0 +1,753 @@
+<title>Planar Tracker Roadmap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a compositing-app timeline up top (phases as clips, milestones as keyframes, playhead = now),
+   then a "now" panel, then one block per phase with keyframe-diamond status markers. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --sunk: #e8ecf0;
+  --line: #d3dae1;
+  --fg: #18202a;
+  --muted: #5a6876;
+  --accent: #1f6f99;
+  --accent-soft: #d6e8f2;
+  --done: #2f8a4e;
+  --active: #c27d0e;
+  --blocked: #c23b3b;
+  --todo: #9aa7b4;
+  --display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191e; --surface: #1d232a; --sunk: #232a32; --line: #333d48;
+    --fg: #e4e9ee; --muted: #93a1af; --accent: #62b4dc; --accent-soft: #1f3644;
+    --done: #4fb873; --active: #e3a43a; --blocked: #e26464; --todo: #5f6d7b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191e; --surface: #1d232a; --sunk: #232a32; --line: #333d48;
+  --fg: #e4e9ee; --muted: #93a1af; --accent: #62b4dc; --accent-soft: #1f3644;
+  --done: #4fb873; --active: #e3a43a; --blocked: #e26464; --todo: #5f6d7b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+  display: grid;
+  gap: 40px;
+}
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-weight: 600; }
+h3 { font-size: 19px; font-weight: 600; }
+p { margin: 0; }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+.prose { max-width: 68ch; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+header { display: grid; gap: 14px; }
+header .lede { font-size: 17px; max-width: 70ch; color: var(--muted); }
+.stats { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; }
+.stat { display: flex; gap: 8px; align-items: baseline; }
+.stat b { font-family: var(--display); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+
+/* Status diamonds */
+.kf {
+  width: 11px; height: 11px; flex: none;
+  transform: rotate(45deg);
+  border: 2px solid var(--todo);
+  background: transparent;
+  border-radius: 1px;
+  display: inline-block;
+}
+.kf.done { background: var(--done); border-color: var(--done); }
+.kf.active { border-color: var(--active); background: linear-gradient(135deg, var(--active) 50%, transparent 50%); }
+.kf.blocked { border-color: var(--blocked); background: repeating-linear-gradient(45deg, var(--blocked) 0 2px, transparent 2px 4px); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Timeline */
+.timeline-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 18px 18px 14px;
+  display: grid;
+  gap: 12px;
+}
+.tl-scroll { overflow-x: auto; }
+.tl { position: relative; min-width: 680px; height: 144px; }
+.tl-axis { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; border-top: 1px solid var(--line); }
+.tl-tick { position: absolute; top: 0; height: 6px; border-left: 1px solid var(--line); }
+.tl-tick span {
+  position: absolute; top: 5px; left: 0; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap;
+}
+.tl-tick:first-child span { transform: none; }
+.tl-tick:last-child span { transform: translateX(-100%); }
+.clip {
+  position: absolute;
+  height: 30px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: linear-gradient(90deg, var(--fillc) 0 var(--pct), var(--sunk) var(--pct) 100%);
+  overflow: hidden;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--fg);
+  text-decoration: none;
+}
+.clip.open { border-style: dashed; }
+.clip b { font-family: var(--mono); font-weight: 500; }
+.clip .nm { overflow: hidden; text-overflow: ellipsis; }
+.clip:hover { border-color: var(--accent); }
+.ms {
+  position: absolute; top: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  transform: translateX(-50%);
+}
+.ms .kf { width: 10px; height: 10px; border-color: var(--accent); }
+.ms.hit .kf { background: var(--accent); }
+.ms span { font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 500; }
+.ms-line { position: absolute; top: 30px; bottom: 18px; border-left: 1px dashed var(--line); }
+.playhead { position: absolute; top: 22px; bottom: 18px; width: 0; border-left: 2px solid var(--blocked); }
+.playhead::before {
+  content: "now"; position: absolute; top: -2px; left: 4px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--blocked);
+}
+.tl-note { font-size: 12.5px; color: var(--muted); }
+
+/* Now panel */
+.now { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 18px;
+  display: grid; gap: 12px; align-content: start;
+  min-width: 0;
+}
+.feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.feed li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.feed time { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+.empty { font-size: 14px; color: var(--muted); }
+.feed li.empty { display: block; }
+
+/* Phases */
+.phases { display: grid; gap: 18px; }
+.phase {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  scroll-margin-top: 16px;
+}
+.phase-head {
+  padding: 18px;
+  border-right: 1px solid var(--line);
+  display: grid; gap: 10px; align-content: start;
+}
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
+.bar { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; display: flex; }
+.bar i { display: block; height: 100%; }
+.bar .d { background: var(--done); }
+.bar .a { background: var(--active); }
+.phase-meta { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; display: grid; gap: 2px; }
+.pill {
+  justify-self: start;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+}
+.pill.done { color: var(--done); border-color: var(--done); }
+.pill.active { color: var(--active); border-color: var(--active); }
+.phase-body { padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.phase-body .goal { color: var(--muted); max-width: 70ch; }
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 6px;
+  border-radius: 4px;
+  align-items: start;
+}
+.item:hover { background: var(--sunk); }
+.item .mk { display: flex; justify-content: center; padding-top: 6px; }
+.item button.mk { border: 0; background: none; padding: 6px 0 0; cursor: pointer; }
+.item .t { font-weight: 500; }
+.item .d { font-size: 13.5px; color: var(--muted); }
+.item .note { font-size: 13px; color: var(--active); margin-top: 2px; }
+.item.done .t { color: var(--muted); }
+.exit {
+  font-size: 13.5px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  max-width: 76ch;
+}
+.exit b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; margin-right: 6px; }
+
+/* Reference sections */
+section.ref { display: grid; gap: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.decision { display: grid; gap: 6px; padding: 16px 0 0; border-top: 2px solid var(--fg); }
+.decision p { font-size: 14px; color: var(--muted); }
+pre.diagram {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--sunk);
+  border-radius: 6px;
+  padding: 16px;
+  color: var(--fg);
+}
+.formula {
+  font-family: var(--mono); font-size: 14px;
+  background: var(--sunk); border-radius: 6px; padding: 12px 16px;
+  overflow-x: auto; white-space: nowrap;
+}
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 620px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--sunk); }
+tr:last-child td { border-bottom: 0; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 76ch; }
+ul.plain li::marker { color: var(--accent); }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 760px) {
+  .now, .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .phase { grid-template-columns: minmax(0, 1fr); }
+  .phase-head { border-right: 0; border-bottom: 1px solid var(--line); }
+  .feed li { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .clip, .bar i { transition: background 300ms ease, width 300ms ease; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">OFX plugin · Nuke &amp; Flame · CUDA / Metal</p>
+    <h1>Planar Tracker Roadmap</h1>
+    <p class="lede">A high-end planar tracker for compositing: dense ESM homography solver, node-based mattes and holdouts, per-pixel slip diagnostics, and direct export to Nuke CornerPin and Flame Action. Progress markers update as work lands.</p>
+    <div class="stats" id="stats">
+      <div class="stat"><b id="st-pct">0%</b><span>overall</span></div>
+      <div class="stat"><b id="st-done">0</b><span id="st-done-l">of 0 items done</span></div>
+      <div class="stat"><b id="st-active">0</b><span>in progress</span></div>
+      <div class="stat"><b id="st-phase">Phase 0</b><span>current phase</span></div>
+    </div>
+    <div class="legend" aria-label="Status legend">
+      <span><i class="kf"></i>Not started</span>
+      <span><i class="kf active"></i>In progress</span>
+      <span><i class="kf done"></i>Done</span>
+      <span><i class="kf blocked"></i>Blocked</span>
+    </div>
+  </header>
+
+  <div class="timeline-card">
+    <div class="tl-scroll"><div class="tl" id="tl" aria-label="Phase timeline"></div></div>
+    <p class="tl-note">Rough weeks for 2–3 experienced engineers. Phase 3 runs alongside Phase 2; Phase 8 is ongoing from Phase 4. Clip fill shows completed work. Diamonds mark milestones.</p>
+  </div>
+
+  <div class="now">
+    <div class="panel">
+      <p class="eyebrow">Working on now</p>
+      <ul class="items" id="now-items"></ul>
+    </div>
+    <div class="panel">
+      <p class="eyebrow">Latest updates</p>
+      <ul class="feed" id="feed"><li class="empty">Updates appear here as work lands.</li></ul>
+      <p class="empty" id="db-note" hidden>Live progress isn't available in this view, so every item shows as not started.</p>
+    </div>
+  </div>
+
+  <section class="ref" aria-labelledby="h-phases">
+    <h2 id="h-phases">Phases</h2>
+    <div class="phases" id="phases"></div>
+  </section>
+
+  <section class="ref" aria-labelledby="h-dec">
+    <h2 id="h-dec">Guiding decisions</h2>
+    <div class="grid2">
+      <div class="decision">
+        <h3>Engine first, two front ends</h3>
+        <p>One C++ engine with CUDA, Metal and CPU backends. The OFX plugin and the standalone workbench are both clients, plus a CLI and Python API for farm work.</p>
+      </div>
+      <div class="decision">
+        <h3>Workbench in its own process</h3>
+        <p>Host OFX panels can't hold a node graph or heat maps, and a second Qt UI inside Nuke risks clashes. The plugin launches the workbench and feeds it host frames, the pattern Mocha Pro uses.</p>
+      </div>
+      <div class="decision">
+        <h3>Dense direct solver at the core</h3>
+        <p>ESM on SL(3) with robust IRLS and a photometric model uses every weighted pixel, gives sub-pixel accuracy, down-weights occluders automatically, and makes the heat map nearly free. Feature matching is a support system for initialization and re-acquisition.</p>
+      </div>
+      <div class="decision">
+        <h3>Track in a perceptual space</h3>
+        <p>Scene-linear EXR highlights dominate a least-squares solve. Tracking input goes through OCIO into log (for example ACEScct) by default.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ref" aria-labelledby="h-ux">
+    <h2 id="h-ux">Holdouts you can read</h2>
+    <p class="prose muted">Every track, shape, matte operation and export is a node. A holdout is a visible edge into a Subtract node, and "shape follows track" is a visible edge too. A layer list edits the same graph for quick setups.</p>
+<pre class="diagram">[Read plate.%04d.exr] ─► [OCIO → ACEScct] ─► [Bandpass] ───────────────┐ image
+                                                                       ▼
+[Shape: Wall] ─────────────────► [Subtract] ───────────────────► [Track: Wall] ─► [Surface: Poster] ─► [Export: Nuke CornerPin]
+                                    ▲  ▲                          matte
+[Shape: Actor] ──(holdout)──────────┘  │
+    ▲ transform                        │
+[Track: Actor]                         │
+                                       │
+[Key: Greenscreen] ──(holdout)─────────┘</pre>
+    <ul class="plain">
+      <li><b>Matte provenance view:</b> each pixel is colored by the node that included or excluded it. Hovering reports, for example, "excluded by Shape: Actor via Subtract, feeds Track: Wall".</li>
+      <li><b>Effective matte:</b> select any Track node to see the final weighted matte it actually uses on the current frame.</li>
+      <li><b>One color per node</b> across graph, layer list, viewer outlines and timeline lanes.</li>
+    </ul>
+  </section>
+
+  <section class="ref" aria-labelledby="h-heat">
+    <h2 id="h-heat">Why it slipped: the heat map</h2>
+    <p class="prose muted">Feasible, because the direct solver already computes a residual, weight and Jacobian per pixel. At the solution the update is a sum of per-pixel contributions, so each pixel's push on the track is known exactly.</p>
+    <div class="formula">Δp = H⁻¹ · Σᵢ wᵢ Jᵢᵀ rᵢ &nbsp;&nbsp;&nbsp; H = Σᵢ wᵢ Jᵢᵀ Jᵢ &nbsp;&nbsp;&nbsp; cᵢ = H⁻¹ wᵢ Jᵢᵀ rᵢ</div>
+    <ul class="plain">
+      <li><b>Contribution map:</b> project each cᵢ onto the unexpected motion, a single DOF, or a clicked corner ("which pixels pushed this corner that way").</li>
+      <li><b>Weight and residual maps:</b> what the robust estimator ignored, and where reference and frame disagree.</li>
+      <li><b>Coarse-level and accumulated modes</b> for gross failures and slow drift.</li>
+      <li><b>Slip analyzer:</b> ranks likely causes (occluder entering, lighting change, degenerate texture, motion blur, plane leaving frame, motion too large, reflection or parallax) with a one-click fix for each.</li>
+    </ul>
+  </section>
+
+  <section class="ref" aria-labelledby="h-extra">
+    <h2 id="h-extra">Track savers artists rarely ask for</h2>
+    <ul class="plain">
+      <li>Stabilized view and reference flicker as the main QC tools; drift is obvious long before it shows on a grid.</li>
+      <li>Separate tracking region and insert surface: track the whole wall, pin the poster.</li>
+      <li>Global refinement pass over all frame homographies to remove slow drift on long shots.</li>
+      <li>Lens-distortion-aware tracking; a planar track through a distorted lens is wrong at the edges.</li>
+      <li>EXR data window, overscan and anamorphic pixel aspect handled in every export, the classic source of 1–2 px offsets.</li>
+      <li>Frame-number and timecode mapping between MOV (frame 0), EXR (1001) and host time.</li>
+      <li>Lighting curve export: the solver's gain/bias drives a Grade so the insert flickers with the plate.</li>
+      <li>Trackability preview and best start frame suggestion before you track.</li>
+      <li>Roto from tracks: the same shapes export as keyframed Nuke Roto or Flame GMask.</li>
+    </ul>
+  </section>
+
+  <section class="ref" aria-labelledby="h-risk">
+    <h2 id="h-risk">Risks</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td>Flame OFX limits (overlays, temporal access, paste)</td><td>Weaker in-Flame experience</td><td>Phase 0 host matrix; out-of-process UI; file export plus Flame Python hook</td></tr>
+          <tr><td>Nuke OFX limits for deep integration</td><td>Some features feel bolted on</td><td>Optional native Nuke NDK adapter on the same engine</td></tr>
+          <tr><td>Two GPU backends doubling kernel work</td><td>Slower delivery</td><td>Single-source kernels (Slang) and CPU reference with parity tests</td></tr>
+          <tr><td>ML model weight licenses</td><td>Commercial shipping blocked</td><td>Permissive models only (SAM 2, LightGlue, ALIKED, DISK, RAFT); avoid SuperPoint/SuperGlue and CC-BY-NC models such as CoTracker</td></tr>
+          <tr><td>FFmpeg licensing</td><td>Distribution constraints</td><td>LGPL build, dynamically linked</td></tr>
+          <tr><td>Scope creep in Phases 6–7</td><td>v1 delayed</td><td>v1.0 is Phases 0–5; later work prioritized from slip-analyzer data on real shots</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span id="foot-updated">Progress is stored with this page and updated as work lands.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Timeline spans in rough weeks (0–65). lane 0 = main path.
+  const PHASES = [
+    { id: "p0", n: 0, name: "Foundations and de-risking", span: [0, 4], lane: 0, size: "3–4 wks",
+      goal: "Remove the unknowns that could force a re-architecture later. Each spike ends with a short written decision.",
+      exit: "Written decisions on GPU approach, UI process model and file format, plus a per-host feature matrix.",
+      items: [
+        ["p0-roadmap", "Phased roadmap", "Architecture, phases, milestones and risks agreed."],
+        ["p0-repo", "Repo skeleton", "CMake presets, CI on Windows, Linux and macOS arm64, core library and CLI targets."],
+        ["p0-conventions", "Coordinate and time conventions", "Pixel centers, data vs display window, pixel aspect, frame numbering and timecode."],
+        ["p0-format", "Project file format", "JSON graph and keyframes with schema versioning; binary sidecar for caches."],
+        ["p0-hosts", "Host capability matrix", "Nuke 15/16 and Flame 2026/2027: temporal access, overlays, animated params, child process, GPU suites, Flame paste."],
+        ["p0-gpu", "GPU kernel spike", "Warp, Jacobian and reduction on CUDA and Metal; choose Slang or Halide."],
+        ["p0-ipc", "Workbench bridge prototype", "Plugin-to-app socket plus shared-memory frames; measure 4K half-float transfer."],
+        ["p0-licenses", "Third-party license review", "FFmpeg, Qt, OCIO, OIIO, OpenEXR and ML weights."],
+        ["p0-shots", "Test-shot library", "15–30 hard real shots: flicker, grain, blur, occluders, low texture, anamorphic, distortion."]
+      ] },
+    { id: "p1", n: 1, name: "Core tracking engine", span: [4, 13], lane: 0, size: "8–10 wks",
+      goal: "A headless, accurate CPU tracker with EXR and MOV I/O, diagnostics recorded from day one, and a CLI that outputs a pasteable Nuke CornerPin.",
+      exit: "Under 0.1 px mean corner error on clean synthetic shots; the CLI tracks real plates and the CornerPin lines up in Nuke.",
+      items: [
+        ["p1-synth", "Synthetic ground-truth generator", "Known homography paths with grain, blur, flicker, occluders, distortion and partial visibility; benchmark harness."],
+        ["p1-solver", "ESM homography solver", "Second-order minimization on SL(3) in a coarse-to-fine pyramid; inverse-compositional alternative."],
+        ["p1-models", "Motion models", "Translation, translation + rotation + scale, affine, perspective."],
+        ["p1-robust", "Robust IRLS and photometric model", "Huber, Tukey and Cauchy with MAD scale; joint gain and bias."],
+        ["p1-refs", "Reference strategy", "Frame-to-frame prediction refined against a keyframe, with re-anchoring; forward and backward."],
+        ["p1-diag", "Per-frame diagnostics", "Residual, ZNCC, inlier ratio, Hessian condition, iterations, visible fraction, gain/bias."],
+        ["p1-exr", "OpenEXR reader", "Multi-part and layers, data and display windows, pixel aspect, all common compressions."],
+        ["p1-mov", "MOV reader", "FFmpeg: ProRes, DNxHR, H.264, HEVC; color tags and full vs legal range."],
+        ["p1-ocio", "OCIO color and tracking space", "Input, tracking-space and display transforms with metadata-based defaults."],
+        ["p1-cache", "Frame cache", "Threaded prefetch storing precomputed pyramid levels."],
+        ["p1-export", "Export v1 and CLI", "Nuke CornerPin2D (track and stabilize), Tracker4, JSON with full homography and diagnostics."]
+      ] },
+    { id: "p2", n: 2, name: "Workbench MVP", span: [13, 25], lane: 0, size: "10–12 wks",
+      goal: "A standalone app where an artist draws, tracks, corrects, previews and exports a real shot.",
+      exit: "An artist takes a real EXR or MOV shot from drawing to tracking, correction, QC and paste into Nuke, without the CLI.",
+      items: [
+        ["p2-viewer", "GPU viewer", "OCIO display, exposure and gamma, channel isolation, sub-pixel loupe."],
+        ["p2-timeline", "Timeline and confidence lane", "Cache bar, in/out, keyframe markers, green/amber/red confidence strip."],
+        ["p2-shapes", "Shapes", "Bezier and X-spline, per-point feather, keyframes, link to track with offset."],
+        ["p2-graph", "Node graph v1 and layer list", "Source, Shape, Merge, Subtract, Intersect, Invert, Grow/Feather, Track, Surface, Export."],
+        ["p2-trackui", "Tracking controls", "Forward, back, step, range; auto-pause on low confidence."],
+        ["p2-adjust", "AdjustTrack and curves", "Corner corrections as an interpolated layer; curve editor; plane-space smoothing."],
+        ["p2-preview", "Preview and QC", "Perspective grid, insert test card, stabilized view, reference flicker."],
+        ["p2-project", "Project files", "Save/load, autosave, crash recovery, undo, relink."],
+        ["p2-clipboard", "Clipboard export", "Nuke CornerPin2D and Tracker4 from the app."]
+      ] },
+    { id: "p3", n: 3, name: "GPU acceleration", span: [19, 25], lane: 1, size: "4–6 wks",
+      goal: "Interactive tracking speed on NVIDIA and Apple Silicon. Runs alongside Phase 2.",
+      exit: "4K perspective track at or above playback rate on a current RTX workstation and an M-series Max, with CPU/GPU parity in CI.",
+      items: [
+        ["p3-kernels", "CUDA and Metal kernels", "Pyramids, warp, gradients, Jacobian, reductions, matte raster, filters."],
+        ["p3-cache", "GPU-resident frame cache", "Upload once, pyramids on device, LRU eviction."],
+        ["p3-decode", "Hardware decode", "NVDEC on NVIDIA, VideoToolbox (ProRes) on Apple Silicon; threaded EXR."],
+        ["p3-async", "Async pipeline", "Overlap decode, upload and solve; several tracks at once."],
+        ["p3-parity", "Parity tests", "Every kernel checked against the CPU reference on both vendors."]
+      ] },
+    { id: "p4", n: 4, name: "OFX plugin and host integration", span: [25, 35], lane: 0, size: "8–10 wks",
+      goal: "The tracker as a node in Nuke and Flame, with the workbench one click away.",
+      exit: "Validated against the host matrix; pasted or exported pins line up within 0.05 px of the in-app result in both hosts.",
+      items: [
+        ["p4-plugin", "Plugin node", "Source, Insert and Matte inputs; corner pin, stabilize, matte, grid and pass-through outputs."],
+        ["p4-params", "Animated host parameters", "Surface corners exposed for expressions and linking."],
+        ["p4-launch", "Workbench launch and frame bridge", "Open Tracker button; frames via temporal clip access and shared memory."],
+        ["p4-embed", "Project embedded in host script", "Compressed parameter, optional sidecar."],
+        ["p4-overlay", "Viewer overlay", "Corners and grid in Nuke; Flame where OFX allows."],
+        ["p4-flame", "Flame export", "Action 3D axis + camera, perspective surface pin, .ascii files, Python hook."],
+        ["p4-package", "Packaging", "OFX bundles, signing, notarization, installers, farm-friendly licensing."],
+        ["p4-golden", "Round-trip golden tests", "Scripted Nuke and Flame checks of pasted alignment."]
+      ] },
+    { id: "p5", n: 5, name: "Diagnostics: heat map and slip analyzer", span: [35, 41], lane: 0, size: "4–6 wks",
+      goal: "Make it obvious why a track slipped and what to do about it.",
+      exit: "On known-bad shots from the test library, the analyzer names the right cause and the heat map shows the culprit pixels.",
+      items: [
+        ["p5-maps", "Contribution, weight and residual maps", "One extra GPU pass per frame, only when shown."],
+        ["p5-corner", "Corner, coarse-level and accumulated modes", "Click a slipped corner; coarse pyramid view; sum over the last N frames."],
+        ["p5-analyzer", "Slip analyzer", "Ranked causes with one-click fixes; jump to last good frame."],
+        ["p5-autoholdout", "Auto-holdout suggestions", "Fit a holdout shape to clusters of rejected pixels."],
+        ["p5-trackability", "Trackability preview", "Structure-tensor texture map and best start frame suggestion."]
+      ] },
+    { id: "p6", n: 6, name: "Robustness and lighting-agnostic tracking", span: [41, 55], lane: 0, size: "10–14 wks",
+      goal: "The tough-shot toolkit: lighting changes, grain, occlusion gaps, long-shot drift, lens and blur.",
+      exit: "Measurable improvement on the hard half of the test-shot library, prioritized by slip-analyzer findings.",
+      items: [
+        ["p6-pre", "Preprocessing nodes", "Bandpass, local contrast normalization, gradient orientation, census, channel mix, denoise."],
+        ["p6-costs", "Cost functions", "ZNCC/ECC, mutual information, descriptor fields."],
+        ["p6-photo", "Spatially varying gain", "Low-order gain field for shadows sweeping across a plane."],
+        ["p6-keyers", "Keyer and matte nodes", "Luma, chroma and difference keys; matte from robust weights."],
+        ["p6-features", "Feature init and re-acquisition", "ALIKED or DISK with LightGlue and MAGSAC++; SIFT/ORB fallback."],
+        ["p6-bidir", "Bidirectional merge", "Forward and backward solutions blended by confidence."],
+        ["p6-global", "Global refinement", "Multi-keyframe anchoring and pose-graph optimization on SL(3)."],
+        ["p6-lens", "Lens-distortion-aware tracking", "ST-maps, 3DE4 models via ldpk, Nuke LensDistortion."],
+        ["p6-blur", "Blur-aware tracking", "ESM-blur style alignment of heavily blurred frames."]
+      ] },
+    { id: "p7", n: 7, name: "Advanced and ML-assisted", span: [55, 65], lane: 0, open: true, size: "à la carte",
+      goal: "Optional extras, picked by demand.",
+      exit: "Each feature ships independently once it beats the manual workflow on real shots.",
+      items: [
+        ["p7-sam", "SAM 2 segmentation nodes", "Click to segment surface or occluder; propagated mattes."],
+        ["p7-mesh", "Mesh tracking", "Regularized mesh warp for cloth, flags, curved panels."],
+        ["p7-flow", "Dense-flow priors", "RAFT-class flow as prediction for violent motion."],
+        ["p7-3d", "3D plane and camera export", "Nuke Camera + Card, Flame 3D axis, FBX and Alembic."],
+        ["p7-roto", "Roto export", "Nuke Roto shapes and Flame GMask with keyframes."],
+        ["p7-light", "Lighting curve export", "Gain/bias to Nuke Grade or a Flame color node."],
+        ["p7-fusion", "Multi-plane fusion", "Confidence-weighted co-planar tracks; parent/child prediction."],
+        ["p7-blender", "Blender export", "Corner pin via Python script, if requested."]
+      ] },
+    { id: "p8", n: 8, name: "Pipeline and polish", span: [25, 65], lane: 1, open: true, size: "ongoing",
+      goal: "Scripting, farm use and day-to-day polish, ongoing from Phase 4.",
+      exit: "Pipeline TDs can build, track and export from Python and the farm without opening the UI.",
+      items: [
+        ["p8-python", "Python API", "pybind11 bindings over the full graph."],
+        ["p8-cli", "Farm CLI", "Exit codes and quality thresholds for automated QC."],
+        ["p8-keymaps", "Keymap presets", "Nuke, Flame and Mocha."],
+        ["p8-templates", "Templates and sample project", "Screen replacement, wall insert with actor holdout."],
+        ["p8-docs", "Docs and tutorials", "Short, task-based."],
+        ["p8-hud", "Crash reporting and performance HUD", "Opt-in."]
+      ] }
+  ];
+  const MILESTONES = [
+    { id: "M1", at: 13, phases: ["p1"], label: "It tracks" },
+    { id: "M2", at: 25, phases: ["p2", "p3"], label: "Artist-usable standalone" },
+    { id: "M3", at: 41, phases: ["p4", "p5"], label: "v1.0 in the comp" },
+    { id: "M4", at: 55, phases: ["p6"], label: "Tough-shot toolkit" }
+  ];
+  const TOTAL_WEEKS = 65;
+  const CYCLE = ["todo", "active", "done", "blocked"];
+  const STATUS_LABEL = { todo: "Not started", active: "In progress", done: "Done", blocked: "Blocked" };
+
+  let progress = {};      // itemId -> {status, note, updated}
+  let canEdit = false;
+  let db = null;
+
+  const $ = (id) => document.getElementById(id);
+  const statusOf = (itemId) => (progress[itemId] && CYCLE.includes(progress[itemId].status)) ? progress[itemId].status : "todo";
+
+  function phaseStats(p) {
+    let done = 0, active = 0, blocked = 0;
+    for (const [id] of p.items) {
+      const s = statusOf(id);
+      if (s === "done") done++; else if (s === "active") active++; else if (s === "blocked") blocked++;
+    }
+    const total = p.items.length;
+    const pct = total ? (done + active * 0.5) / total : 0;
+    let state = "todo";
+    if (done === total) state = "done"; else if (done || active) state = "active";
+    return { done, active, blocked, total, pct, state };
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function itemRow(p, item) {
+    const [id, title, desc] = item;
+    const s = statusOf(id);
+    const li = el("li", "item " + s);
+    let mk;
+    if (canEdit && db) {
+      mk = el("button", "mk");
+      mk.type = "button";
+      mk.title = STATUS_LABEL[s] + " (click to change)";
+      mk.setAttribute("aria-label", title + ": " + STATUS_LABEL[s] + ". Change status");
+      mk.addEventListener("click", () => cycle(id));
+    } else {
+      mk = el("span", "mk");
+      mk.title = STATUS_LABEL[s];
+      mk.setAttribute("aria-label", STATUS_LABEL[s]);
+    }
+    mk.appendChild(el("i", "kf " + s));
+    const body = el("div");
+    body.appendChild(el("div", "t", title));
+    body.appendChild(el("div", "d", desc));
+    const note = progress[id] && progress[id].note;
+    if (note && s !== "done") body.appendChild(el("div", "note", note));
+    li.append(mk, body);
+    return li;
+  }
+
+  function renderTimeline() {
+    const tl = $("tl");
+    tl.textContent = "";
+    const laneTop = [44, 82, 120];
+    const x = (w) => (w / TOTAL_WEEKS * 100) + "%";
+    for (const m of MILESTONES) {
+      const hit = m.phases.every((pid) => phaseStats(PHASES.find((p) => p.id === pid)).state === "done");
+      const ms = el("div", "ms" + (hit ? " hit" : ""));
+      ms.style.left = x(m.at);
+      ms.title = m.id + ": " + m.label;
+      ms.append(el("i", "kf"), el("span", null, m.id));
+      tl.appendChild(ms);
+      const line = el("div", "ms-line");
+      line.style.left = x(m.at);
+      tl.appendChild(line);
+    }
+    for (const p of PHASES) {
+      const st = phaseStats(p);
+      const a = el("a", "clip" + (p.open ? " open" : ""));
+      a.href = "#" + p.id;
+      a.style.left = "calc(" + x(p.span[0]) + " + 1px)";
+      a.style.width = "calc(" + x(p.span[1] - p.span[0]) + " - 2px)";
+      a.style.top = laneTop[p.lane] + "px";
+      a.style.setProperty("--pct", Math.round(st.pct * 100) + "%");
+      a.style.setProperty("--fillc", st.state === "done" ? "var(--done)" : "color-mix(in srgb, var(--done) 45%, var(--surface))");
+      a.title = "Phase " + p.n + ": " + p.name + " (" + st.done + "/" + st.total + " done)";
+      a.append(el("b", null, "P" + p.n), el("span", "nm", p.name));
+      tl.appendChild(a);
+    }
+    const axis = el("div", "tl-axis");
+    for (const w of [0, 13, 26, 39, 52, 65]) {
+      const t = el("div", "tl-tick");
+      t.style.left = x(w);
+      t.appendChild(el("span", null, "wk " + w));
+      axis.appendChild(t);
+    }
+    tl.appendChild(axis);
+    // Playhead: earliest main-lane phase that isn't finished, positioned by its completion.
+    const cur = PHASES.filter((p) => p.lane === 0).find((p) => phaseStats(p).state !== "done");
+    if (cur) {
+      const st = phaseStats(cur);
+      const ph = el("div", "playhead");
+      ph.style.left = x(cur.span[0] + (cur.span[1] - cur.span[0]) * st.pct);
+      tl.appendChild(ph);
+    }
+  }
+
+  function renderPhases() {
+    const host = $("phases");
+    host.textContent = "";
+    for (const p of PHASES) {
+      const st = phaseStats(p);
+      const sec = el("article", "phase");
+      sec.id = p.id;
+      const head = el("div", "phase-head");
+      head.appendChild(el("span", "phase-num", "PHASE " + p.n));
+      head.appendChild(el("h3", null, p.name));
+      const pill = el("span", "pill " + st.state, st.state === "done" ? "Complete" : st.state === "active" ? "In progress" : "Not started");
+      head.appendChild(pill);
+      const bar = el("div", "bar");
+      bar.setAttribute("role", "img");
+      bar.setAttribute("aria-label", st.done + " of " + st.total + " done, " + st.active + " in progress");
+      const d = el("i", "d"); d.style.width = (st.done / st.total * 100) + "%";
+      const a = el("i", "a"); a.style.width = (st.active / st.total * 100) + "%";
+      bar.append(d, a);
+      head.appendChild(bar);
+      const meta = el("div", "phase-meta");
+      meta.appendChild(el("span", null, st.done + " / " + st.total + " done" + (st.active ? " · " + st.active + " active" : "") + (st.blocked ? " · " + st.blocked + " blocked" : "")));
+      meta.appendChild(el("span", null, "Size: " + p.size));
+      head.appendChild(meta);
+
+      const body = el("div", "phase-body");
+      body.appendChild(el("p", "goal", p.goal));
+      const ul = el("ul", "items");
+      for (const it of p.items) ul.appendChild(itemRow(p, it));
+      body.appendChild(ul);
+      const exit = el("p", "exit");
+      exit.appendChild(el("b", null, "Exit"));
+      exit.appendChild(document.createTextNode(p.exit));
+      body.appendChild(exit);
+      sec.append(head, body);
+      host.appendChild(sec);
+    }
+  }
+
+  function renderSummary() {
+    let done = 0, active = 0, total = 0, score = 0;
+    for (const p of PHASES) {
+      const st = phaseStats(p);
+      done += st.done; active += st.active; total += st.total;
+      score += st.done + st.active * 0.5;
+    }
+    $("st-pct").textContent = Math.round(score / total * 100) + "%";
+    $("st-done").textContent = String(done);
+    $("st-done-l").textContent = "of " + total + " items done";
+    $("st-active").textContent = String(active);
+    const cur = PHASES.filter((p) => p.lane === 0).find((p) => phaseStats(p).state !== "done");
+    $("st-phase").textContent = cur ? "Phase " + cur.n : "All";
+
+    const now = $("now-items");
+    now.textContent = "";
+    for (const p of PHASES) for (const it of p.items) {
+      if (statusOf(it[0]) === "active" || statusOf(it[0]) === "blocked") now.appendChild(itemRow(p, it));
+    }
+    if (!now.children.length) {
+      const next = cur && cur.items.find((it) => statusOf(it[0]) === "todo");
+      const li = el("li", "empty", next ? "Nothing in progress. Next up: " + next[1] + " (Phase " + cur.n + ")." : "Nothing in progress.");
+      now.appendChild(li);
+    }
+
+    let latest = "";
+    for (const k in progress) if (progress[k].updated && progress[k].updated > latest) latest = progress[k].updated;
+    if (latest) $("foot-updated").textContent = "Progress last updated " + fmtDate(latest) + ".";
+  }
+
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function renderFeed(docs) {
+    const feed = $("feed");
+    feed.textContent = "";
+    if (!docs.length) { feed.appendChild(el("li", "empty", "Updates appear here as work lands.")); return; }
+    for (const d of docs) {
+      const v = d.data() || {};
+      const li = el("li");
+      const t = el("time", null, v.at ? fmtDate(v.at) : "");
+      if (v.at) t.dateTime = v.at;
+      li.append(t, el("span", null, String(v.text || "")));
+      feed.appendChild(li);
+    }
+  }
+
+  function renderAll() { renderSummary(); renderTimeline(); renderPhases(); }
+
+  let writing = false;
+  async function cycle(id) {
+    if (!db || writing) return;
+    const next = CYCLE[(CYCLE.indexOf(statusOf(id)) + 1) % CYCLE.length];
+    const prev = progress[id];
+    const body = Object.assign({}, prev || {}, { status: next, updated: new Date().toISOString() });
+    progress = Object.assign({}, progress, { [id]: body });
+    renderAll();
+    writing = true;
+    try { await db.doc("progress/" + id).set(body); }
+    catch (e) {
+      progress = Object.assign({}, progress, { [id]: prev });
+      if (!prev) delete progress[id];
+      canEdit = false;
+      renderAll();
+    } finally { writing = false; }
+  }
+
+  renderAll();
+
+  (async function connect() {
+    let user = null;
+    try { user = await window.claude?.use?.("user"); } catch (e) { user = null; }
+    try { db = await window.claude?.use?.("db"); } catch (e) { db = null; }
+    if (!db) { $("db-note").hidden = false; return; }
+    try { canEdit = user ? await user.canEdit() : false; } catch (e) { canEdit = false; }
+    db.collection("progress").onSnapshot((snap) => {
+      const next = {};
+      for (const d of snap.docs) { const v = d.data(); if (v) next[d.id] = v; }
+      progress = next;
+      renderAll();
+    }, () => { $("db-note").hidden = false; });
+    db.collection("updates").orderBy("at", "desc").limit(8).onSnapshot((snap) => renderFeed(snap.docs), () => {});
+  })();
+})();
+</script>
