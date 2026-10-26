@@ -1,0 +1,41 @@
+# End-to-end: synth -> track -> eval -> nuke, through the real CLI and files on disk.
+# Invoked by CTest with -DPTRACK=<exe> -DWORK=<dir>.
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+
+function(run)
+  execute_process(COMMAND ${ARGN} RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "command failed (${rc}): ${ARGN}\n${out}\n${err}")
+  endif()
+  set(LAST_OUT "${out}" PARENT_SCOPE)
+endfunction()
+
+run("${PTRACK}" synth --out "${WORK}" --frames 12 --ref-offset 4 --noise 0.005)
+file(READ "${WORK}/truth.json" truth)
+string(JSON surface GET "${truth}" surface)
+set(s "")
+foreach(i RANGE 3)
+  foreach(j RANGE 1)
+    string(JSON v GET "${surface}" ${i} ${j})
+    list(APPEND s "${v}")
+  endforeach()
+endforeach()
+string(JOIN "," s ${s})
+
+run("${PTRACK}" track --seq "${WORK}/plate.####.exr" --ref 1005 --mask "${WORK}/mask.exr"
+    --surface "${s}" --out "${WORK}/track.json" --nuke "${WORK}/pin.nk" --quiet)
+run("${PTRACK}" eval --track "${WORK}/track.json" --truth "${WORK}/truth.json")
+string(REGEX MATCH "mean corner error ([0-9.]+)" _ "${LAST_OUT}")
+if(NOT CMAKE_MATCH_1 OR CMAKE_MATCH_1 GREATER 0.1)
+  message(FATAL_ERROR "corner error too high: ${LAST_OUT}")
+endif()
+message(STATUS "${LAST_OUT}")
+
+file(READ "${WORK}/pin.nk" pin)
+foreach(knob "CornerPin2D {" " to1 {{curve x1001" " from4 {")
+  string(FIND "${pin}" "${knob}" pos)
+  if(pos EQUAL -1)
+    message(FATAL_ERROR "pin.nk is missing '${knob}'")
+  endif()
+endforeach()
