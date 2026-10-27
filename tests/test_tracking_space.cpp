@@ -2,6 +2,7 @@
 
 #include <doctest/doctest.h>
 
+#include <stdexcept>
 #include <string>
 
 using namespace ptrack;

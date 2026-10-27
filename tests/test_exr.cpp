@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <stdexcept>
 
 using namespace ptrack;
 namespace fs = std::filesystem;
