@@ -74,6 +74,14 @@ const std::vector<Mat3>& motionBasis(MotionModel model) {
     return bases[static_cast<int>(model)];
 }
 
+std::vector<Mat3> motionBasis(MotionModel model, double pixelAspect) {
+    std::vector<Mat3> b = motionBasis(model);
+    if (pixelAspect <= 0.0 || pixelAspect == 1.0) return b;
+    const Eigen::DiagonalMatrix<double, 3> s(pixelAspect, 1.0, 1.0), si(1.0 / pixelAspect, 1.0, 1.0);
+    for (Mat3& m : b) m = si * m * s;
+    return b;
+}
+
 Mat3 expm(const Mat3& a) {
     const double norm = a.cwiseAbs().rowwise().sum().maxCoeff();
     int squarings = 0;

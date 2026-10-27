@@ -16,6 +16,7 @@ bool parseRobustLoss(const std::string& s, RobustLoss& out);
 
 struct SolverParams {
     MotionModel model = MotionModel::Perspective;
+    double pixelAspect = 1.0;       // non-square pixels: similarity means rotation/scale on screen
     RobustLoss loss = RobustLoss::Tukey;
     int warmupIterations = 3;       // Huber iterations per level before a redescending loss
     double lossScale = 0.0;         // residual scale; 0 = automatic (1.4826 * MAD)

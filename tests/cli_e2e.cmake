@@ -57,3 +57,17 @@ if(FFMPEG)
     message(STATUS "movie: ${LAST_OUT}")
   endif()
 endif()
+
+# Overscan: plates with data outside the display window. Tracking with and
+# without --overscan must agree with the display-window ground truth.
+set(OS "${WORK}/overscan")
+run("${PTRACK}" synth --out "${OS}" --frames 10 --overscan 32 --motion 2)
+foreach(flag "" "--overscan")
+  run("${PTRACK}" track --seq "${OS}/plate.####.exr" --mask "${OS}/mask.exr" --out "${OS}/t.json" --quiet ${flag})
+  run("${PTRACK}" eval --track "${OS}/t.json" --truth "${OS}/truth.json")
+  string(REGEX MATCH "mean corner error ([0-9.]+)" _ "${LAST_OUT}")
+  if(NOT CMAKE_MATCH_1 OR CMAKE_MATCH_1 GREATER 0.05)
+    message(FATAL_ERROR "overscan track (${flag}) corner error too high: ${LAST_OUT}")
+  endif()
+  message(STATUS "overscan ${flag}: ${LAST_OUT}")
+endforeach()

@@ -26,6 +26,12 @@ bool parseMotionModel(const std::string& s, MotionModel& out);
 // Perspective spans all of gl(3) modulo scale; smaller models span subgroups.
 const std::vector<Mat3>& motionBasis(MotionModel model);
 
+// The same generators for non-square pixels (pixelAspect = displayed width /
+// stored width, e.g. 2.0 for 2x anamorphic). Rotation and uniform scale then
+// mean rotation and scale on screen: B' = S^-1 B S with S = diag(pixelAspect, 1, 1).
+// Translation, affine and perspective span the same space either way.
+std::vector<Mat3> motionBasis(MotionModel model, double pixelAspect);
+
 // Matrix exponential (scaling and squaring with a Taylor series). Accurate for
 // the small updates the solvers produce and well beyond.
 Mat3 expm(const Mat3& a);

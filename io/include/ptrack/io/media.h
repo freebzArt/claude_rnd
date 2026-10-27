@@ -10,6 +10,7 @@ namespace ptrack::io {
 struct MediaOptions {
     std::string layer;            // EXR layer prefix
     int part = 0;                 // EXR part
+    bool overscan = false;        // EXR: keep data outside the display window
     // Movies: host frame number of the first frame. Nuke numbers movie frames
     // from 1 by default (docs/conventions.md, section 5).
     int movieStart = 1;
@@ -33,13 +34,17 @@ public:
     int width() const { return width_; }
     int height() const { return height_; }
     double pixelAspect() const { return pixelAspect_; }
+    // Where image pixel (0, 0) sits relative to the display window origin.
+    // Zero unless overscan is kept; negative when the data extends up or left.
+    int originX() const { return originX_; }
+    int originY() const { return originY_; }
     // Scene-linear sources (EXR) default to a log tracking curve; display-referred
     // sources (most movies) are tracked as they are.
     bool sceneLinear() const { return sceneLinear_; }
     const std::string& description() const { return description_; }
 
 protected:
-    int first_ = 0, last_ = -1, width_ = 0, height_ = 0;
+    int first_ = 0, last_ = -1, width_ = 0, height_ = 0, originX_ = 0, originY_ = 0;
     double pixelAspect_ = 1.0;
     bool sceneLinear_ = false;
     std::string description_;

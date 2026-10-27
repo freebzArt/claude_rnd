@@ -66,8 +66,7 @@ struct LevelState {
     std::vector<float> dudv;
 };
 
-void precomputeBasisDerivatives(const TemplateLevel& tl, MotionModel model, LevelState& st) {
-    const auto& basis = motionBasis(model);
+void precomputeBasisDerivatives(const TemplateLevel& tl, const std::vector<Mat3>& basis, LevelState& st) {
     const int dof = static_cast<int>(basis.size());
     const size_t n = tl.x.size();
     const double k = 1.0 / tl.spread;
@@ -305,7 +304,7 @@ SolveResult solveESM(const Template& tmpl, const Pyramid& frame, const Mat3& hIn
     res.bias = bias;
     if (tmpl.empty() || frame.levels() == 0) return res;
 
-    const auto& basis = motionBasis(params.model);
+    const std::vector<Mat3> basis = motionBasis(params.model, params.pixelAspect);
     const int dof = static_cast<int>(basis.size());
     const int n = dof + (params.photometric ? 2 : 0);
     const int levels = std::min(tmpl.levelCount(), frame.levels());
@@ -318,7 +317,7 @@ SolveResult solveESM(const Template& tmpl, const Pyramid& frame, const Mat3& hIn
     for (int l = levels - 1; l >= 0; --l) {
         const TemplateLevel& tl = tmpl.levels[l];
         const PyramidLevel& fl = frame.level(l);
-        precomputeBasisDerivatives(tl, params.model, st);
+        precomputeBasisDerivatives(tl, basis, st);
         const Mat3 nrm = normaliser(tl, false), nrmInv = normaliser(tl, true);
         const double tol = (l == 0) ? params.tolerance : std::max(params.tolerance, 0.01);
         Mat3 hl = toLevel(h, tl.scale);
@@ -367,7 +366,7 @@ SolveResult solveESM(const Template& tmpl, const Pyramid& frame, const Mat3& hIn
     // Final evaluation at the solution: diagnostics, and optionally the
     // per-pixel record used by the heat maps.
     const TemplateLevel& tl = tmpl.levels[0];
-    precomputeBasisDerivatives(tl, params.model, st);
+    precomputeBasisDerivatives(tl, basis, st);
     const size_t visible = sampleFrame(tl, frame.level(0), res.h, a, b, st);
     if (visible == 0) return res;
     const double scale = residualScale(tl, st, params);

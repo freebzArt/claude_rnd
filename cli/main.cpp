@@ -16,6 +16,7 @@
 #include "ptrack/raster.h"
 #include "ptrack/synth.h"
 #include "ptrack/tracker.h"
+#include "ptrack/warp.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -152,20 +153,40 @@ int cmdSynth(const Args& a) {
     p.flicker = a.getDouble("flicker", p.flicker);
     p.occluder = a.has("occluder");
     p.seed = static_cast<unsigned>(a.getInt("seed", 1));
+    // --overscan N renders N extra pixels on every side and stores them as EXR
+    // data outside the display window; truth, surface and mask stay in display
+    // coordinates, so the plane can be tracked into the overscan.
+    const int over = a.getInt("overscan", 0);
+    const int dispW = p.width, dispH = p.height;
+    p.width += 2 * over;
+    p.height += 2 * over;
     const fs::path out = a.require("out");
     fs::create_directories(out);
 
-    const SynthShot shot = makeSynthShot(p);
+    SynthShot shot = makeSynthShot(p);
+    io::ExrWriteOptions wo;
+    wo.displayWidth = dispW;
+    wo.displayHeight = dispH;
+    wo.dataOriginX = wo.dataOriginY = -over;
+    wo.pixelAspect = static_cast<float>(a.getDouble("pixel-aspect", 1.0));
     for (int i = 0; i < p.frames; ++i) {
         char name[64];
         std::snprintf(name, sizeof name, "plate.%04d.exr", p.startFrame + i);
-        io::writeExrGrey((out / name).string(), shot.frames[i]);
+        io::writeExrGrey((out / name).string(), shot.frames[i], wo);
+    }
+    if (over > 0) {
+        Image disp(dispW, dispH);
+        for (int y = 0; y < dispH; ++y)
+            for (int x = 0; x < dispW; ++x) disp.at(x, y) = shot.mask.at(x + over, y + over);
+        shot.mask = std::move(disp);
+        for (Mat3& h : shot.truth) h = translateHomography(h, Vec2(-over, -over));
+        for (Vec2& c : shot.surface) c -= Vec2(over, over);
     }
     io::writeExrGrey((out / "mask.exr").string(), shot.mask);
 
     io::TrackDocument truth;
-    truth.formatWidth = p.width;
-    truth.formatHeight = p.height;
+    truth.formatWidth = dispW;
+    truth.formatHeight = dispH;
     truth.surface = shot.surface;
     truth.source = (out / "plate.####.exr").string();
     truth.track.referenceFrame = shot.referenceFrame;
@@ -191,6 +212,7 @@ int cmdTrack(const Args& a) {
     io::MediaOptions mo;
     mo.layer = a.get("layer", "");
     mo.part = a.getInt("part", 0);
+    mo.overscan = a.has("overscan");
     if (a.get("start") == "timecode") mo.movieStartFromTimecode = true;
     else mo.movieStart = a.getInt("start", 1);
     const auto media = io::openMedia(a.require("seq"), mo);
@@ -269,6 +291,7 @@ int cmdTrack(const Args& a) {
         throw std::runtime_error("--loss must be none, huber, tukey or cauchy");
     tp.pyramidLevels = a.getInt("levels", 0);
     tp.pauseBelowZncc = a.getDouble("pause-zncc", tp.pauseBelowZncc);
+    tp.solver.pixelAspect = a.getDouble("pixel-aspect", info.pixelAspect);
 
     const bool quiet = a.has("quiet");
     FrameSource source = [&](int f) -> Image {
@@ -283,7 +306,25 @@ int cmdTrack(const Args& a) {
         if (!quiet) std::cerr << "\rtracking frame " << f << "   " << std::flush;
         return img;
     };
-    const TrackResult result = trackRegion(source, ref, mask, first, last, tp);
+    // With overscan the tracked images are larger than the display window:
+    // place the matte inside them, track, then express the track in
+    // display-window coordinates again (docs/conventions.md, section 1).
+    const Vec2 origin(media->originX(), media->originY());
+    Image trackMask = mask;
+    if (origin != Vec2::Zero()) {
+        const Image refImg = source(ref);
+        if (refImg.empty()) throw std::runtime_error("cannot read the reference frame");
+        trackMask = Image(refImg.width(), refImg.height());
+        for (int y = 0; y < mask.height(); ++y)
+            for (int x = 0; x < mask.width(); ++x) {
+                const int ax = x - media->originX(), ay = y - media->originY();
+                if (ax >= 0 && ay >= 0 && ax < trackMask.width() && ay < trackMask.height())
+                    trackMask.at(ax, ay) = mask.at(x, y);
+            }
+    }
+    TrackResult result = trackRegion(source, ref, trackMask, first, last, tp);
+    if (origin != Vec2::Zero())
+        for (TrackedFrame& f : result.frames) f.h = translateHomography(f.h, origin);
     if (!quiet) std::cerr << "\r";
 
     std::cerr << "Tracked " << result.frames.size() << " of " << (last - first + 1) << " frames ("
@@ -367,10 +408,12 @@ void usage() {
         R"(ptrack - planar tracker (engine CLI)
 
   ptrack synth --out DIR [--frames N] [--noise S] [--flicker F] [--occluder] [--seed N]
+               [--overscan N] [--pixel-aspect N]
   ptrack track --seq PATTERN|MOVIE [--ref FRAME] (--mask FILE | --quad x,y,x,y,x,y,x,y)
                [--range A-B] [--start N|timecode] [--surface x,y,...] [--coords internal|nuke]
                [--model perspective] [--strategy hybrid] [--loss huber] [--levels N]
-               [--channel luma|R|G|B|A|layer.chan] [--layer L] [--part N]
+               [--channel luma|R|G|B|A|layer.chan] [--layer L] [--part N] [--overscan]
+               [--pixel-aspect N]
                [--curve auto|acescct|none] [--ocio CONFIG --from SPACE --to SPACE]
                [--out track.json] [--nuke FILE|-] [--clipboard] [--stabilize] [--name NODE]
   ptrack nuke  --track FILE [--stabilize] [--name NODE] [--nuke FILE|-] [--clipboard]

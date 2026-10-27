@@ -23,18 +23,26 @@ public:
     ExrSequenceMedia(const std::string& pattern, const MediaOptions& o) : seq_(pattern) {
         opts_.layer = o.layer;
         opts_.part = o.part;
+        opts_.overscan = o.overscan;
         const auto frames = seq_.scan();
         if (frames.empty()) throw std::runtime_error("no frames found for " + seq_.pattern());
         first_ = frames.front();
         last_ = frames.back();
-        const ExrInfo info = probeExr(seq_.path(first_), o.part);
+        ExrInfo info;
+        readExrRgb(seq_.path(first_), opts_, &info); // validates the first frame too
         width_ = info.width;
         height_ = info.height;
+        originX_ = info.originX;
+        originY_ = info.originY;
         pixelAspect_ = info.pixelAspect;
         sceneLinear_ = true;
         std::ostringstream d;
         d << seq_.pattern() << " (" << first_ << "-" << last_ << ", " << frames.size() << " frames, "
-          << width_ << "x" << height_ << ")";
+          << width_ << "x" << height_;
+        if (originX_ || originY_ || info.imageWidth != width_ || info.imageHeight != height_)
+            d << ", overscan " << info.imageWidth << "x" << info.imageHeight << " from (" << originX_ << ","
+              << originY_ << ")";
+        d << ")";
         description_ = d.str();
     }
 

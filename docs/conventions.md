@@ -23,9 +23,11 @@ OpenEXR's notion of a pixel's area.
 
 Tracking images are always placed in display-window coordinates:
 
-- pixels of the data window outside the display window (overscan) are
-  currently cropped. Overscan support is planned: those pixels will keep their
-  coordinates, which go negative or beyond the display size;
+- pixels of the data window outside the display window (overscan) are cropped
+  by default. With overscan kept (`--overscan`), the tracked image covers the
+  union of both windows and its pixel (0, 0) sits at a negative offset from the
+  display origin. Tracks are converted back, so their coordinates go negative or
+  beyond the display size where the plane is in the overscan;
 - areas of the display window not covered by the data window are filled with
   zero and marked invalid for sampling.
 
@@ -34,8 +36,8 @@ Tracking images are always placed in display-window coordinates:
 Coordinates stay in stored pixels. Pixel aspect (for example 2.0 for
 anamorphic) is carried as metadata and used by:
 
-- the solver's regularization and smoothing, so that "isotropic" means
-  isotropic on screen;
+- the similarity motion model, so that rotation and uniform scale mean rotation
+  and scale on screen (implemented), and later smoothing and regularization;
 - the 3D exports (homography decomposition needs square-pixel coordinates).
 
 2D corner pins are exported in stored pixels, which is what Nuke's CornerPin2D

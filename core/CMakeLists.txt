@@ -8,6 +8,7 @@ add_library(ptrack_core
   src/solver.cpp
   src/synth.cpp
   src/tracker.cpp
+  src/warp.cpp
 )
 add_library(ptrack::core ALIAS ptrack_core)
 target_include_directories(ptrack_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

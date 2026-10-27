@@ -84,3 +84,34 @@ TEST_CASE("track JSON round trip") {
     CHECK(b.track.pausedAt == 1002);
     CHECK(b.surface[2].x() == doctest::Approx(9.0));
 }
+
+TEST_CASE("EXR overscan: cropped by default, kept on request with its origin") {
+    Image img(30, 20);
+    for (int y = 0; y < 20; ++y)
+        for (int x = 0; x < 30; ++x) img.at(x, y) = 0.01f * x + 0.1f * y;
+    io::ExrWriteOptions w;
+    w.halfFloat = false;
+    w.displayWidth = 20;
+    w.displayHeight = 14;
+    w.dataOriginX = -5;
+    w.dataOriginY = -3;
+    w.pixelAspect = 2.0f;
+    const std::string p = (tempDir() / "overscan.exr").string();
+    io::writeExrGrey(p, img, w);
+
+    io::ExrInfo info;
+    const Image disp = io::readExr(p, {}, &info);
+    CHECK(info.pixelAspect == doctest::Approx(2.0f));
+    REQUIRE(disp.width() == 20);
+    REQUIRE(disp.height() == 14);
+    CHECK(disp.at(0, 0) == doctest::Approx(img.at(5, 3)));
+
+    io::ExrReadOptions o;
+    o.overscan = true;
+    const Image full = io::readExr(p, o, &info);
+    REQUIRE(full.width() == 30);
+    REQUIRE(full.height() == 20);
+    CHECK(info.originX == -5);
+    CHECK(info.originY == -3);
+    CHECK(full.at(7, 9) == doctest::Approx(img.at(7, 9)));
+}

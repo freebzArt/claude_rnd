@@ -1,5 +1,10 @@
 #include "ptrack/solver.h"
 #include "ptrack/synth.h"
+#include "ptrack/warp.h"
+
+#include <Eigen/Dense>
+
+#include <cmath>
 
 #include "test_helpers.h"
 
@@ -82,4 +87,43 @@ TEST_CASE("degenerate texture shows up in the condition number") {
     params.model = MotionModel::Translation;
     const SolveResult r = solveESM(t, pyr, Mat3::Identity(), 1.0, 0.0, params);
     CHECK(r.diag.conditionNumber > 1e6);
+}
+
+TEST_CASE("similarity on anamorphic pixels means rotation on screen") {
+    // A 2x-squeezed plate: a 4 degree screen-space rotation is not a rotation
+    // in stored pixels, so the similarity model must know the pixel aspect.
+    Image tex(320, 360);
+    for (int y = 0; y < tex.height(); ++y)
+        for (int x = 0; x < tex.width(); ++x)
+            tex.at(x, y) = 0.5f + 0.2f * std::sin(0.31f * x + 0.05f * y) * std::cos(0.17f * y) +
+                           0.15f * std::sin(0.07f * x * 2.0f - 0.11f * y);
+    const double par = 2.0, a = 4.0 * 3.14159265358979 / 180.0;
+    Mat3 rot = Mat3::Identity();
+    rot << std::cos(a), -std::sin(a), 0, std::sin(a), std::cos(a), 0, 0, 0, 1;
+    const Eigen::DiagonalMatrix<double, 3> s(par, 1.0, 1.0), si(1.0 / par, 1.0, 1.0);
+    // Rotate about the centre on screen, then express in stored pixels.
+    Mat3 c = Mat3::Identity(), ci = Mat3::Identity();
+    c(0, 2) = 160 * par;
+    c(1, 2) = 180;
+    ci(0, 2) = -160 * par;
+    ci(1, 2) = -180;
+    const Mat3 truth = Mat3(si * (c * rot * ci) * s);
+    const Image cur = warpImage(tex, truth, tex.width(), tex.height());
+    Image mask(320, 360);
+    for (int y = 90; y < 270; ++y)
+        for (int x = 80; x < 240; ++x) mask.at(x, y) = 1.0f;
+    const Pyramid ref(tex, 3), frame(cur, 3);
+    const Template t = buildTemplate(ref, mask);
+    const std::array<Vec2, 4> box = {Vec2(80, 270), Vec2(240, 270), Vec2(240, 90), Vec2(80, 90)};
+
+    SolverParams p;
+    p.model = MotionModel::Similarity;
+    p.pixelAspect = par;
+    const SolveResult good = solveESM(t, frame, Mat3::Identity(), 1.0, 0.0, p);
+    p.pixelAspect = 1.0;
+    const SolveResult bad = solveESM(t, frame, Mat3::Identity(), 1.0, 0.0, p);
+    const double eGood = cornerErr(good.h, truth, box), eBad = cornerErr(bad.h, truth, box);
+    MESSAGE("anamorphic similarity: with pixel aspect " << eGood << " px, without " << eBad << " px");
+    CHECK(eGood < 0.05);
+    CHECK(eBad > 1.0);
 }
