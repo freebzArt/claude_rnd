@@ -24,6 +24,9 @@ struct ExrReadOptions {
     std::string channel = "luma";
 };
 
+// Read R, G and B (or Y, copied to all three) into display-window coordinates.
+RgbImage readExrRgb(const std::string& path, const ExrReadOptions& opts = {}, ExrInfo* info = nullptr);
+
 // Read one tracking channel into display-window coordinates. Overscan outside
 // the display window is cropped; display areas without data are zero.
 // Throws std::runtime_error with a readable message on failure.

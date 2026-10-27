@@ -8,7 +8,6 @@
 namespace ptrack::io {
 
 struct MediaOptions {
-    std::string channel = "luma"; // "luma" or a channel name
     std::string layer;            // EXR layer prefix
     int part = 0;                 // EXR part
     // Movies: host frame number of the first frame. Nuke numbers movie frames
@@ -22,9 +21,12 @@ class Media {
 public:
     virtual ~Media() = default;
 
-    // The tracking channel of one frame, in display-window coordinates.
-    // Empty if the frame is missing or past the ends.
-    virtual Image read(int frame) = 0;
+    // Colour of one frame in display-window coordinates, as stored (no colour
+    // conversion). Empty if the frame is missing or past the ends.
+    virtual RgbImage readRgb(int frame) = 0;
+
+    // One named non-colour channel ("A", "depth.Z"). EXR only.
+    virtual Image readChannel(int frame, const std::string& name);
 
     int first() const { return first_; }
     int last() const { return last_; }

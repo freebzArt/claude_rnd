@@ -21,7 +21,6 @@ namespace {
 class ExrSequenceMedia final : public Media {
 public:
     ExrSequenceMedia(const std::string& pattern, const MediaOptions& o) : seq_(pattern) {
-        opts_.channel = o.channel;
         opts_.layer = o.layer;
         opts_.part = o.part;
         const auto frames = seq_.scan();
@@ -39,10 +38,18 @@ public:
         description_ = d.str();
     }
 
-    Image read(int frame) override {
+    RgbImage readRgb(int frame) override {
         const std::string p = seq_.path(frame);
         if (!fs::exists(p)) return {};
-        return readExr(p, opts_);
+        return readExrRgb(p, opts_);
+    }
+
+    Image readChannel(int frame, const std::string& name) override {
+        const std::string p = seq_.path(frame);
+        if (!fs::exists(p)) return {};
+        ExrReadOptions o = opts_;
+        o.channel = name;
+        return readExr(p, o);
     }
 
 private:
@@ -53,7 +60,7 @@ private:
 #ifdef PTRACK_HAVE_FFMPEG
 class MovieMedia final : public Media {
 public:
-    MovieMedia(const std::string& path, const MediaOptions& o) : reader_(path), channel_(o.channel) {
+    MovieMedia(const std::string& path, const MediaOptions& o) : reader_(path) {
         const MovieInfo& i = reader_.info();
         int start = o.movieStart;
         if (o.movieStartFromTimecode) {
@@ -76,16 +83,20 @@ public:
         description_ = d.str();
     }
 
-    Image read(int frame) override { return reader_.readFrame(frame - start_, channel_); }
+    RgbImage readRgb(int frame) override { return reader_.readFrameRgb(frame - start_); }
 
 private:
     MovieReader reader_;
-    std::string channel_;
     int start_ = 1;
 };
 #endif
 
 } // namespace
+
+Image Media::readChannel(int, const std::string& name) {
+    throw std::runtime_error("channel '" + name + "' is not available from " + description_ +
+                             " (movies offer luma, R, G and B)");
+}
 
 bool isMoviePath(const std::string& path) {
     std::string ext = fs::path(path).extension().string();

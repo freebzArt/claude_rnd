@@ -29,7 +29,7 @@
       "name": "windows-vcpkg",
       "inherits": "ci",
       "toolchainFile": "$env{VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": { "PTRACK_WARNINGS_AS_ERRORS": "OFF", "PTRACK_WITH_FFMPEG": "OFF" },
+      "cacheVariables": { "PTRACK_WARNINGS_AS_ERRORS": "OFF", "PTRACK_WITH_FFMPEG": "OFF", "PTRACK_WITH_OCIO": "OFF" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     }
   ],

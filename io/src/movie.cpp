@@ -107,7 +107,7 @@ struct MovieReader::Impl {
         eof = false;
     }
 
-    Image convert(const std::string& channel) {
+    RgbImage convert() {
         const int w = frame->width, h = frame->height;
         if (!sws || swsSrcFormat != frame->format) {
             sws_freeContext(sws);
@@ -127,14 +127,16 @@ struct MovieReader::Impl {
         const int dstStride[1] = {w * 6};
         sws_scale(sws, frame->data, frame->linesize, 0, h, dst, dstStride);
 
-        Image out(w, h);
+        RgbImage out{Image(w, h), Image(w, h), Image(w, h)};
         constexpr float k = 1.0f / 65535.0f;
-        const int c = channel == "R" ? 0 : channel == "G" ? 1 : channel == "B" ? 2 : -1;
         for (int y = 0; y < h; ++y) {
             const uint16_t* s = rgb.data() + size_t(y) * w * 3;
-            float* d = out.row(y);
-            for (int x = 0; x < w; ++x, s += 3)
-                d[x] = c >= 0 ? s[c] * k : luma709(s[0] * k, s[1] * k, s[2] * k);
+            float *r = out.r.row(y), *g = out.g.row(y), *b = out.b.row(y);
+            for (int x = 0; x < w; ++x, s += 3) {
+                r[x] = s[0] * k;
+                g[x] = s[1] * k;
+                b[x] = s[2] * k;
+            }
         }
         return out;
     }
@@ -185,6 +187,18 @@ MovieReader::~MovieReader() = default;
 const MovieInfo& MovieReader::info() const { return impl_->info; }
 
 Image MovieReader::readFrame(int64_t index, const std::string& channel) {
+    RgbImage rgb = readFrameRgb(index);
+    if (rgb.empty()) return {};
+    if (channel == "R") return std::move(rgb.r);
+    if (channel == "G") return std::move(rgb.g);
+    if (channel == "B") return std::move(rgb.b);
+    Image out(rgb.width(), rgb.height());
+    const size_t n = size_t(out.width()) * out.height();
+    for (size_t i = 0; i < n; ++i) out.data()[i] = luma709(rgb.r.data()[i], rgb.g.data()[i], rgb.b.data()[i]);
+    return out;
+}
+
+RgbImage MovieReader::readFrameRgb(int64_t index) {
     Impl& m = *impl_;
     if (index < 0 || (m.info.frameCount > 0 && index >= m.info.frameCount)) return {};
     if (index != m.nextIndex) m.seekTo(index);
@@ -198,7 +212,7 @@ Image MovieReader::readFrame(int64_t index, const std::string& channel) {
             // Overshot (frame missing from the stream): report it as unavailable.
             return {};
         }
-        return m.convert(channel);
+        return m.convert();
     }
     m.nextIndex = -1;
     return {};

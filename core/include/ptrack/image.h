@@ -46,4 +46,12 @@ private:
     std::vector<float> px_;
 };
 
+// Three planes of a colour image, same size.
+struct RgbImage {
+    Image r, g, b;
+    bool empty() const { return r.empty(); }
+    int width() const { return r.width(); }
+    int height() const { return r.height(); }
+};
+
 } // namespace ptrack

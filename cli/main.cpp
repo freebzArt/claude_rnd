@@ -12,6 +12,7 @@
 #include "ptrack/io/media.h"
 #include "ptrack/io/sequence.h"
 #include "ptrack/io/track_json.h"
+#include "ptrack/io/tracking_space.h"
 #include "ptrack/raster.h"
 #include "ptrack/synth.h"
 #include "ptrack/tracker.h"
@@ -188,7 +189,6 @@ int cmdSynth(const Args& a) {
 
 int cmdTrack(const Args& a) {
     io::MediaOptions mo;
-    mo.channel = a.get("channel", "luma");
     mo.layer = a.get("layer", "");
     mo.part = a.getInt("part", 0);
     if (a.get("start") == "timecode") mo.movieStartFromTimecode = true;
@@ -214,6 +214,18 @@ int cmdTrack(const Args& a) {
     TrackingCurve curve = media->sceneLinear() ? TrackingCurve::ACEScct : TrackingCurve::None;
     if (curveName != "auto" && !parseTrackingCurve(curveName, curve))
         throw std::runtime_error("--curve must be auto, acescct or none");
+    const std::string channel = a.get("channel", "luma");
+    std::unique_ptr<io::TrackingSpace> space;
+    if (io::TrackingSpace::isColourChannel(channel)) {
+        io::TrackingSpaceOptions so;
+        so.channel = channel;
+        so.ocioConfig = a.get("ocio", "");
+        so.from = a.get("from", "");
+        so.to = a.get("to", "");
+        so.curve = curve;
+        space = std::make_unique<io::TrackingSpace>(so);
+        if (!a.has("quiet")) std::cerr << "Tracking space: " << space->description() << "\n";
+    }
 
     const std::string coords = a.get("coords", "internal");
     Image mask;
@@ -260,9 +272,14 @@ int cmdTrack(const Args& a) {
 
     const bool quiet = a.has("quiet");
     FrameSource source = [&](int f) -> Image {
-        Image img = media->read(f);
+        Image img;
+        if (space) {
+            img = space->apply(media->readRgb(f));
+        } else {
+            img = media->readChannel(f, channel);
+            applyCurve(curve, img);
+        }
         if (img.empty()) return img;
-        applyCurve(curve, img);
         if (!quiet) std::cerr << "\rtracking frame " << f << "   " << std::flush;
         return img;
     };
@@ -282,7 +299,8 @@ int cmdTrack(const Args& a) {
     doc.pixelAspect = info.pixelAspect;
     doc.source = a.get("seq");
     doc.settings = std::string("model=") + toString(tp.solver.model) + " strategy=" + toString(tp.strategy) +
-                   " loss=" + toString(tp.solver.loss) + " curve=" + toString(curve);
+                   " loss=" + toString(tp.solver.loss) + " space=" +
+                   (space ? space->description() : channel + ", curve " + toString(curve));
     const std::string outPath = a.get("out", "track.json");
     io::writeTrackJson(outPath, doc);
     std::cerr << "Track written to " << outPath << "\n";
@@ -352,7 +370,8 @@ void usage() {
   ptrack track --seq PATTERN|MOVIE [--ref FRAME] (--mask FILE | --quad x,y,x,y,x,y,x,y)
                [--range A-B] [--start N|timecode] [--surface x,y,...] [--coords internal|nuke]
                [--model perspective] [--strategy hybrid] [--loss huber] [--levels N]
-               [--curve auto|acescct|none] [--layer L] [--channel luma|R|G|B|...]
+               [--channel luma|R|G|B|A|layer.chan] [--layer L] [--part N]
+               [--curve auto|acescct|none] [--ocio CONFIG --from SPACE --to SPACE]
                [--out track.json] [--nuke FILE|-] [--clipboard] [--stabilize] [--name NODE]
   ptrack nuke  --track FILE [--stabilize] [--name NODE] [--nuke FILE|-] [--clipboard]
   ptrack eval  --track FILE --truth FILE
@@ -360,6 +379,10 @@ void usage() {
 
 Movies (.mov, .mp4, .mxf) number their frames from --start (default 1, as
 Nuke does) or from the file's timecode with --start timecode.
+
+Tracking space: scene-linear EXRs default to the ACEScct curve, movies to none.
+With an OCIO config (--ocio, or $OCIO) give --from and --to (colourspaces or
+roles, e.g. --from scene_linear --to compositing_log) to convert instead.
 
 Quads list corners bottom-left, bottom-right, top-right, top-left. Internal
 coordinates have y down from the top of the frame; --coords nuke takes y up,

@@ -69,8 +69,8 @@ TEST_CASE("movie: host frame numbering from start frame or timecode") {
     const auto m = io::openMedia(path, o);
     CHECK(m->first() == 1001);
     CHECK(m->last() == 1012);
-    CHECK_FALSE(m->read(1005).empty());
-    CHECK(m->read(1013).empty());
+    CHECK_FALSE(m->readRgb(1005).empty());
+    CHECK(m->readRgb(1013).empty());
     o.movieStartFromTimecode = true;
     CHECK(io::openMedia(path, o)->first() == 240); // 10 s at 24 fps
 }

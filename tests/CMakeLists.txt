@@ -10,9 +10,11 @@ add_executable(ptrack_tests
   test_export_nuke.cpp
   test_exr.cpp
   test_movie.cpp
+  test_tracking_space.cpp
 )
 target_link_libraries(ptrack_tests PRIVATE ptrack::core ptrack::io doctest::doctest)
 ptrack_set_warnings(ptrack_tests)
+target_compile_definitions(ptrack_tests PRIVATE PTRACK_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
 add_test(NAME ptrack_tests COMMAND ptrack_tests)
 
 if(TARGET ptrack)

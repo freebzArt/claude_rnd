@@ -38,6 +38,9 @@ public:
     // Returns an empty image past the end of the movie.
     Image readFrame(int64_t index, const std::string& channel = "luma");
 
+    // Full-range RGB in [0, 1], display-referred as stored.
+    RgbImage readFrameRgb(int64_t index);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
