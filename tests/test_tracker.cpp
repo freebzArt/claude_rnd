@@ -114,3 +114,72 @@ TEST_CASE("no silent slips: occluder already in the reference, grain and flicker
         CHECK(e.max < 2.0);
     }
 }
+
+TEST_CASE("lighting: a shadow sweeps across the plane") {
+    // A soft shadow edge crosses the whole plane. Its moving brightness ramp
+    // looks like motion, so frame-to-frame alone drifts by hundreds of pixels
+    // while every score stays high. Hybrid must stay anchored: the reference
+    // is retried on lighting-normalised images when the plain match fails.
+    SynthParams sp;
+    sp.frames = 40;
+    sp.shadow = 0.85;
+    sp.noiseSigma = 0.01;
+    sp.seed = 7;
+    const SynthShot s = makeSynthShot(sp);
+    const int last = s.startFrame + sp.frames - 1;
+
+    TrackParams hy;
+    const TrackResult h = trackRegion(sourceFor(s), s.referenceFrame, s.mask, s.startFrame, last, hy);
+    const auto e = cornerError(h, s);
+    report("shadow, hybrid (fallback)", e);
+    int fallbackFrames = 0;
+    for (const TrackedFrame& f : h.frames) fallbackFrames += f.lightingFallback ? 1 : 0;
+    std::printf("  lighting fallback on %d frames\n", fallbackFrames);
+    CHECK_FALSE(h.pausedAt.has_value());
+    CHECK(fallbackFrames > 0);
+    CHECK(e.mean < 0.3);
+    CHECK(e.max < 1.0);
+
+    TrackParams lc = hy;
+    lc.preprocess.mode = Normalize::LocalContrast;
+    lc.strategy = ReferenceStrategy::Keyframe;
+    // Normalisation works on log-encoded images, as the CLI feeds it.
+    const auto ek = cornerError(
+        trackRegion(sourceFor(s, TrackingCurve::ACEScct), s.referenceFrame, s.mask, s.startFrame, last, lc), s);
+    report("shadow, keyframe + local contrast", ek);
+    CHECK(ek.frames == 40);
+    CHECK(ek.mean < 0.3);
+}
+
+TEST_CASE("re-anchoring: the surface's content changes completely") {
+    // The plane's texture morphs into another (think of a screen playing
+    // video). No method recovers exact geometry from changing content, so this
+    // documents behaviour: keyframe-only pauses, hybrid finishes by adding
+    // keyframes, and re-anchoring never makes it worse. Holding out the
+    // changing content is the real fix.
+    SynthParams sp;
+    sp.frames = 40;
+    sp.morph = 1.0;
+    sp.noiseSigma = 0.01;
+    sp.seed = 7;
+    const SynthShot s = makeSynthShot(sp);
+    const int last = s.startFrame + sp.frames - 1;
+
+    TrackParams kf;
+    kf.strategy = ReferenceStrategy::Keyframe;
+    const TrackResult k = trackRegion(sourceFor(s), s.referenceFrame, s.mask, s.startFrame, last, kf);
+    CHECK(k.pausedAt.has_value());
+
+    TrackParams hy;
+    const TrackResult h = trackRegion(sourceFor(s), s.referenceFrame, s.mask, s.startFrame, last, hy);
+    const auto eh = cornerError(h, s);
+    report("morph, hybrid + re-anchor", eh);
+    CHECK_FALSE(h.pausedAt.has_value());
+    CHECK(h.keyframes.size() > 1);
+
+    TrackParams none = hy;
+    none.reanchorAfter = 0;
+    const auto en = cornerError(trackRegion(sourceFor(s), s.referenceFrame, s.mask, s.startFrame, last, none), s);
+    report("morph, hybrid, no re-anchor", en);
+    CHECK(eh.mean <= 1.1 * en.mean);
+}

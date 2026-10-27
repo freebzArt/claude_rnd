@@ -4,6 +4,7 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <random>
@@ -109,6 +110,7 @@ SynthShot makeSynthShot(const SynthParams& p) {
         const Vec2 occC(W * (0.15 + 0.7 * occT), H * (0.35 + 0.2 * std::sin(occT * kPi)));
         const double occR = 0.09 * W;
         const bool occOn = p.occluder && occT > 0.25 && occT < 0.85;
+        const double morphT = p.morph * occT; // occT is also the shot's 0..1 timeline
 
         Image img(p.width, p.height);
         for (int y = 0; y < p.height; ++y) {
@@ -122,10 +124,18 @@ SynthShot makeSynthShot(const SynthParams& p) {
                             val = 0.6 + 0.3 * valueNoise(q.x() / 6.0, q.y() / 6.0, seed + 999);
                         } else {
                             const Vec2 uv = applyH(imgToPlane, q);
-                            if (uv.x() >= 0 && uv.x() < planeW && uv.y() >= 0 && uv.y() < planeH)
-                                val = gain * planeTexture(uv.x(), uv.y(), seed);
-                            else
+                            if (uv.x() >= 0 && uv.x() < planeW && uv.y() >= 0 && uv.y() < planeH) {
+                                val = gain * ((1.0 - morphT) * planeTexture(uv.x(), uv.y(), seed) +
+                                              morphT * planeTexture(uv.x(), uv.y(), seed + 4242));
+                                if (p.shadow > 0.0) {
+                                    // Shadow edge sweeping left to right across the plane.
+                                    const double edge = (-0.15 + 1.3 * occT) * planeW;
+                                    const double t = std::clamp((edge - uv.x()) / (0.08 * planeW) + 0.5, 0.0, 1.0);
+                                    val *= 1.0 - p.shadow * t * t * (3.0 - 2.0 * t);
+                                }
+                            } else {
                                 val = backgroundTexture(q.x() - bgShift.x(), q.y() - bgShift.y(), seed);
+                            }
                         }
                         acc += val;
                     }

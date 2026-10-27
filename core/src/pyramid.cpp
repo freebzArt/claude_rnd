@@ -110,7 +110,7 @@ Image gaussianBlur(const Image& src, double sigma) {
     return dst;
 }
 
-void Pyramid::build(const Image& base, int levels, bool withGradients) {
+void Pyramid::build(const Image& base, int levels, bool withGradients, const LevelFilter& filter) {
     levels_.clear();
     levels_.reserve(levels);
     Image cur = base;
@@ -118,9 +118,9 @@ void Pyramid::build(const Image& base, int levels, bool withGradients) {
     for (int l = 0; l < levels && !cur.empty(); ++l) {
         PyramidLevel lv;
         lv.scale = scale;
-        if (withGradients) computeGradients(cur, lv.gx, lv.gy);
         Image next = (l + 1 < levels) ? downsample2(cur) : Image();
-        lv.img = std::move(cur);
+        lv.img = filter ? filter(cur) : std::move(cur);
+        if (withGradients) computeGradients(lv.img, lv.gx, lv.gy);
         levels_.push_back(std::move(lv));
         cur = std::move(next);
         scale *= 0.5;

@@ -3,6 +3,7 @@ add_library(ptrack_core
   src/colour.cpp
   src/export_nuke.cpp
   src/motion.cpp
+  src/preprocess.cpp
   src/pyramid.cpp
   src/raster.cpp
   src/solver.cpp

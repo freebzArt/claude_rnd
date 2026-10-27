@@ -21,6 +21,8 @@ struct SynthParams {
     double noiseSigma = 0.0;     // additive Gaussian noise (linear units)
     double flicker = 0.0;        // relative gain flicker amplitude
     bool occluder = false;       // a disc crosses the plane mid-shot
+    double morph = 0.0;          // the plane's texture blends this far towards another over the shot
+    double shadow = 0.0;         // depth of a soft shadow edge that sweeps across the plane (0..1)
     unsigned seed = 1;
 };
 

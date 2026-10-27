@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ptrack/colour.h"
 #include "ptrack/synth.h"
 #include "ptrack/tracker.h"
 
@@ -31,10 +32,12 @@ inline CornerError cornerError(const TrackResult& track, const SynthShot& shot) 
     return e;
 }
 
-inline FrameSource sourceFor(const SynthShot& shot) {
-    return [&shot](int f) -> Image {
+inline FrameSource sourceFor(const SynthShot& shot, TrackingCurve curve = TrackingCurve::None) {
+    return [&shot, curve](int f) -> Image {
         if (f < shot.startFrame || f >= shot.startFrame + static_cast<int>(shot.frames.size())) return {};
-        return shot.frame(f);
+        Image img = shot.frame(f);
+        applyCurve(curve, img);
+        return img;
     };
 }
 

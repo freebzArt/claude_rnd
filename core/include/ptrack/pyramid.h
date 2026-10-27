@@ -2,6 +2,7 @@
 
 #include "ptrack/image.h"
 
+#include <functional>
 #include <vector>
 
 namespace ptrack {
@@ -18,14 +19,18 @@ struct PyramidLevel {
     }
 };
 
+// Optional per-level filter (e.g. lighting normalisation). Levels are
+// downsampled from the unfiltered image; each is filtered in its own pixels.
+using LevelFilter = std::function<Image(const Image&)>;
+
 class Pyramid {
 public:
     Pyramid() = default;
-    Pyramid(const Image& base, int levels, bool withGradients = true) {
-        build(base, levels, withGradients);
+    Pyramid(const Image& base, int levels, bool withGradients = true, const LevelFilter& filter = {}) {
+        build(base, levels, withGradients, filter);
     }
 
-    void build(const Image& base, int levels, bool withGradients = true);
+    void build(const Image& base, int levels, bool withGradients = true, const LevelFilter& filter = {});
 
     int levels() const { return static_cast<int>(levels_.size()); }
     const PyramidLevel& level(int l) const { return levels_[l]; }

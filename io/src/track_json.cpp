@@ -52,6 +52,7 @@ json document(const TrackDocument& d, const char* kind, bool withDiagnostics) {
     j["referenceFrame"] = d.track.referenceFrame;
     j["surface"] = corners(d.surface);
     if (!d.settings.empty()) j["settings"] = d.settings;
+    if (!d.track.keyframes.empty()) j["keyframes"] = d.track.keyframes;
     if (d.track.pausedAt) j["paused"] = {{"frame", *d.track.pausedAt}, {"reason", d.track.pauseReason}};
     json frames = json::array();
     for (const TrackedFrame& f : d.track.frames) {
@@ -63,6 +64,9 @@ json document(const TrackDocument& d, const char* kind, bool withDiagnostics) {
             jf["gain"] = f.gain;
             jf["bias"] = f.bias;
             jf["refined"] = f.refinedOnReference;
+            if (f.refinedOnReference) jf["keyframe"] = f.keyframe;
+            if (f.newKeyframe) jf["newKeyframe"] = true;
+            if (f.lightingFallback) jf["lightingFallback"] = true;
             const FrameDiagnostics& g = f.diag;
             jf["diagnostics"] = {{"rms", g.rms},
                                  {"zncc", g.zncc},
@@ -119,6 +123,7 @@ TrackDocument readTrackJson(const std::string& path) {
         d.track.referenceFrame = j.at("referenceFrame").get<int>();
         d.surface = corners(j.at("surface"));
         d.settings = j.value("settings", "");
+        if (j.contains("keyframes")) d.track.keyframes = j["keyframes"].get<std::vector<int>>();
         if (j.contains("paused")) {
             d.track.pausedAt = j["paused"].at("frame").get<int>();
             d.track.pauseReason = j["paused"].value("reason", "");
@@ -130,6 +135,9 @@ TrackDocument readTrackJson(const std::string& path) {
             f.gain = jf.value("gain", 1.0);
             f.bias = jf.value("bias", 0.0);
             f.refinedOnReference = jf.value("refined", false);
+            f.keyframe = jf.value("keyframe", d.track.referenceFrame);
+            f.newKeyframe = jf.value("newKeyframe", false);
+            f.lightingFallback = jf.value("lightingFallback", false);
             if (jf.contains("diagnostics")) {
                 const json& g = jf["diagnostics"];
                 f.diag.rms = g.value("rms", 0.0);

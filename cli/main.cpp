@@ -152,6 +152,8 @@ int cmdSynth(const Args& a) {
     p.noiseSigma = a.getDouble("noise", p.noiseSigma);
     p.flicker = a.getDouble("flicker", p.flicker);
     p.occluder = a.has("occluder");
+    p.morph = a.getDouble("morph", 0.0);
+    p.shadow = a.getDouble("shadow", 0.0);
     p.seed = static_cast<unsigned>(a.getInt("seed", 1));
     // --overscan N renders N extra pixels on every side and stores them as EXR
     // data outside the display window; truth, surface and mask stay in display
@@ -292,6 +294,13 @@ int cmdTrack(const Args& a) {
     tp.pyramidLevels = a.getInt("levels", 0);
     tp.pauseBelowZncc = a.getDouble("pause-zncc", tp.pauseBelowZncc);
     tp.solver.pixelAspect = a.getDouble("pixel-aspect", info.pixelAspect);
+    tp.carryRejections = a.getInt("carry-rejections", 1) != 0;
+    tp.lightingFallback = a.getInt("lighting-fallback", 1) != 0;
+    if (a.has("normalize") && !parseNormalize(a.get("normalize"), tp.preprocess.mode))
+        throw std::runtime_error("--normalize must be none, bandpass or local-contrast");
+    tp.preprocess.coarseSigma = a.getDouble("normalize-radius", tp.preprocess.coarseSigma);
+    tp.preprocess.fineSigma = a.getDouble("normalize-fine", tp.preprocess.fineSigma);
+    tp.reanchorAfter = a.getInt("reanchor-after", tp.reanchorAfter);
 
     const bool quiet = a.has("quiet");
     FrameSource source = [&](int f) -> Image {
@@ -340,7 +349,7 @@ int cmdTrack(const Args& a) {
     doc.pixelAspect = info.pixelAspect;
     doc.source = a.get("seq");
     doc.settings = std::string("model=") + toString(tp.solver.model) + " strategy=" + toString(tp.strategy) +
-                   " loss=" + toString(tp.solver.loss) + " space=" +
+                   " loss=" + toString(tp.solver.loss) + " normalize=" + toString(tp.preprocess.mode) + " space=" +
                    (space ? space->description() : channel + ", curve " + toString(curve));
     const std::string outPath = a.get("out", "track.json");
     io::writeTrackJson(outPath, doc);
@@ -408,12 +417,13 @@ void usage() {
         R"(ptrack - planar tracker (engine CLI)
 
   ptrack synth --out DIR [--frames N] [--noise S] [--flicker F] [--occluder] [--seed N]
-               [--overscan N] [--pixel-aspect N]
+               [--overscan N] [--pixel-aspect N] [--morph M] [--shadow S]
   ptrack track --seq PATTERN|MOVIE [--ref FRAME] (--mask FILE | --quad x,y,x,y,x,y,x,y)
                [--range A-B] [--start N|timecode] [--surface x,y,...] [--coords internal|nuke]
                [--model perspective] [--strategy hybrid] [--loss huber] [--levels N]
                [--channel luma|R|G|B|A|layer.chan] [--layer L] [--part N] [--overscan]
-               [--pixel-aspect N]
+               [--pixel-aspect N] [--normalize none|bandpass|local-contrast]
+               [--normalize-radius PX] [--normalize-fine PX]
                [--curve auto|acescct|none] [--ocio CONFIG --from SPACE --to SPACE]
                [--out track.json] [--nuke FILE|-] [--clipboard] [--stabilize] [--name NODE]
   ptrack nuke  --track FILE [--stabilize] [--name NODE] [--nuke FILE|-] [--clipboard]
