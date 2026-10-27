@@ -9,6 +9,7 @@
 #include "ptrack/colour.h"
 #include "ptrack/export_nuke.h"
 #include "ptrack/io/exr.h"
+#include "ptrack/io/media.h"
 #include "ptrack/io/sequence.h"
 #include "ptrack/io/track_json.h"
 #include "ptrack/raster.h"
@@ -186,31 +187,31 @@ int cmdSynth(const Args& a) {
 }
 
 int cmdTrack(const Args& a) {
-    const io::Sequence seq(a.require("seq"));
-    const int ref = std::stoi(a.require("ref"));
+    io::MediaOptions mo;
+    mo.channel = a.get("channel", "luma");
+    mo.layer = a.get("layer", "");
+    mo.part = a.getInt("part", 0);
+    if (a.get("start") == "timecode") mo.movieStartFromTimecode = true;
+    else mo.movieStart = a.getInt("start", 1);
+    const auto media = io::openMedia(a.require("seq"), mo);
+    if (!a.has("quiet")) std::cerr << "Source: " << media->description() << "\n";
+    struct {
+        int width, height;
+        double pixelAspect;
+    } const info{media->width(), media->height(), media->pixelAspect()};
 
-    int first = ref, last = ref;
+    int first = media->first(), last = media->last();
     if (a.has("range")) {
         const auto r = io::Sequence::parseRange(a.get("range"));
         if (!r) throw std::runtime_error("--range must look like 1001-1100");
         first = r->first;
         last = r->second;
-    } else {
-        const auto frames = seq.scan();
-        if (frames.empty()) throw std::runtime_error("no frames found for " + seq.pattern());
-        first = frames.front();
-        last = frames.back();
     }
+    const int ref = a.has("ref") ? std::stoi(a.get("ref")) : first;
     if (ref < first || ref > last) throw std::runtime_error("--ref must lie inside the range");
 
-    io::ExrReadOptions ro;
-    ro.channel = a.get("channel", "luma");
-    ro.layer = a.get("layer", "");
-    ro.part = a.getInt("part", 0);
-    io::ExrInfo info;
-    io::readExr(seq.path(ref), ro, &info); // validates the reference and fetches the format
     const std::string curveName = a.get("curve", "auto");
-    TrackingCurve curve = TrackingCurve::ACEScct; // EXR is scene-linear by default
+    TrackingCurve curve = media->sceneLinear() ? TrackingCurve::ACEScct : TrackingCurve::None;
     if (curveName != "auto" && !parseTrackingCurve(curveName, curve))
         throw std::runtime_error("--curve must be auto, acescct or none");
 
@@ -259,9 +260,8 @@ int cmdTrack(const Args& a) {
 
     const bool quiet = a.has("quiet");
     FrameSource source = [&](int f) -> Image {
-        const std::string path = seq.path(f);
-        if (!fs::exists(path)) return {};
-        Image img = io::readExr(path, ro);
+        Image img = media->read(f);
+        if (img.empty()) return img;
         applyCurve(curve, img);
         if (!quiet) std::cerr << "\rtracking frame " << f << "   " << std::flush;
         return img;
@@ -280,7 +280,7 @@ int cmdTrack(const Args& a) {
     doc.formatWidth = info.width;
     doc.formatHeight = info.height;
     doc.pixelAspect = info.pixelAspect;
-    doc.source = seq.pattern();
+    doc.source = a.get("seq");
     doc.settings = std::string("model=") + toString(tp.solver.model) + " strategy=" + toString(tp.strategy) +
                    " loss=" + toString(tp.solver.loss) + " curve=" + toString(curve);
     const std::string outPath = a.get("out", "track.json");
@@ -349,14 +349,17 @@ void usage() {
         R"(ptrack - planar tracker (engine CLI)
 
   ptrack synth --out DIR [--frames N] [--noise S] [--flicker F] [--occluder] [--seed N]
-  ptrack track --seq PATTERN --ref FRAME (--mask FILE | --quad x,y,x,y,x,y,x,y)
-               [--range A-B] [--surface x,y,...] [--coords internal|nuke]
+  ptrack track --seq PATTERN|MOVIE [--ref FRAME] (--mask FILE | --quad x,y,x,y,x,y,x,y)
+               [--range A-B] [--start N|timecode] [--surface x,y,...] [--coords internal|nuke]
                [--model perspective] [--strategy hybrid] [--loss huber] [--levels N]
                [--curve auto|acescct|none] [--layer L] [--channel luma|R|G|B|...]
                [--out track.json] [--nuke FILE|-] [--clipboard] [--stabilize] [--name NODE]
   ptrack nuke  --track FILE [--stabilize] [--name NODE] [--nuke FILE|-] [--clipboard]
   ptrack eval  --track FILE --truth FILE
   ptrack info  FILE.exr
+
+Movies (.mov, .mp4, .mxf) number their frames from --start (default 1, as
+Nuke does) or from the file's timecode with --start timecode.
 
 Quads list corners bottom-left, bottom-right, top-right, top-left. Internal
 coordinates have y down from the top of the frame; --coords nuke takes y up,

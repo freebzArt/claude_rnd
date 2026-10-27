@@ -12,7 +12,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libeigen3-dev libopenexr-dev nlohmann-json3-dev doctest-dev
+          sudo apt-get install -y ninja-build pkg-config libeigen3-dev libopenexr-dev nlohmann-json3-dev doctest-dev \
+            libavformat-dev libavcodec-dev libswscale-dev ffmpeg
       - name: Configure
         run: cmake --preset ci
       - name: Build
@@ -25,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: brew install ninja eigen openexr nlohmann-json doctest
+        run: brew install ninja pkg-config eigen openexr nlohmann-json doctest ffmpeg
       - name: Configure
         run: cmake --preset ci
       - name: Build

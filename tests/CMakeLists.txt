@@ -9,6 +9,7 @@ add_executable(ptrack_tests
   test_tracker.cpp
   test_export_nuke.cpp
   test_exr.cpp
+  test_movie.cpp
 )
 target_link_libraries(ptrack_tests PRIVATE ptrack::core ptrack::io doctest::doctest)
 ptrack_set_warnings(ptrack_tests)

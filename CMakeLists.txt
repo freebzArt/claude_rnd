@@ -16,7 +16,11 @@ option(PTRACK_BUILD_TESTS "Build unit and accuracy tests" ON)
 option(PTRACK_BUILD_CLI "Build the ptrack command-line tool" ON)
 option(PTRACK_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+# Any Eigen from 3.4 on (Homebrew and vcpkg ship 5.x, whose config rejects a 3.x request).
+find_package(Eigen3 REQUIRED NO_MODULE)
+if(Eigen3_VERSION VERSION_LESS 3.4)
+  message(FATAL_ERROR "Eigen 3.4 or newer is required (found ${Eigen3_VERSION})")
+endif()
 find_package(OpenEXR 3 REQUIRED CONFIG)
 find_package(nlohmann_json 3.10 REQUIRED CONFIG)
 

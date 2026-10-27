@@ -39,3 +39,21 @@ foreach(knob "CornerPin2D {" " to1 {{curve x1001" " from4 {")
     message(FATAL_ERROR "pin.nk is missing '${knob}'")
   endif()
 endforeach()
+
+# Same shot as a ProRes movie, numbered from 1001, when ffmpeg is available.
+find_program(FFMPEG ffmpeg)
+if(FFMPEG)
+  execute_process(COMMAND "${FFMPEG}" -v error -y -framerate 24 -start_number 1001 -i "${WORK}/plate.%04d.exr"
+                          -c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le "${WORK}/clip.mov"
+                  RESULT_VARIABLE rc)
+  if(rc EQUAL 0)
+    run("${PTRACK}" track --seq "${WORK}/clip.mov" --start 1001 --ref 1005 --mask "${WORK}/mask.exr"
+        --surface "${s}" --out "${WORK}/track_mov.json" --quiet)
+    run("${PTRACK}" eval --track "${WORK}/track_mov.json" --truth "${WORK}/truth.json")
+    string(REGEX MATCH "mean corner error ([0-9.]+)" _ "${LAST_OUT}")
+    if(NOT CMAKE_MATCH_1 OR CMAKE_MATCH_1 GREATER 0.1)
+      message(FATAL_ERROR "movie corner error too high: ${LAST_OUT}")
+    endif()
+    message(STATUS "movie: ${LAST_OUT}")
+  endif()
+endif()
