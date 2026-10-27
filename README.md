@@ -11,53 +11,74 @@ The working name in code is **ptrack**.
 
 ## Status
 
-Phase 0 (foundations) and the start of Phase 1 (core engine). What works today:
+Phase 1 (core engine) is done apart from checks that need Nuke; see
+[docs/nuke-check.md](docs/nuke-check.md). What works:
 
-- **ESM planar solver** on a coarse-to-fine pyramid with translation, similarity,
-  affine and perspective models, robust IRLS (Tukey with Huber warm-up by default),
-  and joint gain/bias for lighting changes.
-- **Tracking strategies:** keyframe, frame-to-frame and hybrid. In
-  frame-to-frame and hybrid, pixels rejected as occluded on one frame stay out of
-  the next frame's template.
-- **Auto-pause with a reason** (match quality floor, sudden quality drop,
-  rejected matte, region leaving frame), plus per-frame diagnostics.
-- **Per-pixel contributions** to each solver step, the basis of the Phase 5 heat map.
-- **OpenEXR** reading (layers, parts, data/display windows) with an ACEScct
-  tracking curve for scene-linear plates.
-- **Nuke CornerPin2D** export (track and stabilize) to a file, stdout or the clipboard.
-- **Synthetic ground-truth shots** and an accuracy harness.
+- **ESM planar solver** on a coarse-to-fine pyramid with translation,
+  similarity, affine and perspective models. Uses robust IRLS (Tukey with Huber
+  warm-up) and joint gain/bias for lighting.
+- **Tracking strategies:** keyframe, frame-to-frame and hybrid (default).
+  - Hybrid re-anchors to new keyframes when the reference stops matching.
+  - It falls back to a lighting-normalised reference check when shadows or
+    exposure shifts break the plain match.
+  - Pixels rejected as occluded stay out of the next frame's template.
+- **Auto-pause with a reason** instead of silent slips, with per-frame
+  diagnostics. Per-pixel contributions to each solver step are recorded, the
+  basis of the Phase 5 heat map.
+- **Lighting-agnostic modes:** band-pass and local-contrast normalisation,
+  applied per pyramid level (`--normalize`).
+- **Input:**
+  - OpenEXR sequences: layers, parts, overscan (`--overscan`), pixel aspect.
+  - Movies through FFmpeg (ProRes, DNxHR, H.264, HEVC), numbered from
+    `--start` or timecode.
+  - Read-ahead frame cache.
+- **Colour:** OCIO tracking-space conversion (`--ocio --from --to`), or the
+  built-in ACEScct curve for scene-linear plates.
+- **Export:** Nuke CornerPin2D (track and stabilize) to a file, stdout or the
+  clipboard, plus JSON.
+- **Testing:** synthetic ground-truth shots and an accuracy harness. CI on
+  Linux, macOS arm64 and Windows.
 
-Accuracy on the synthetic harness (640×360, mean surface-corner error):
+Accuracy on the synthetic harness (640×360, mean surface-corner error, default
+settings):
 
-| Shot | Hybrid |
+| Shot | Error |
 |---|---|
 | Clean | 0.004 px |
-| Grain (σ = 0.02) | 0.033 px |
+| Grain (σ = 0.02) | 0.03 px |
 | Lighting flicker (±20%) | 0.003 px |
 | Occluder crossing the plane | 0.003 px |
-| Stress: occluder already in the reference, grain and flicker, no holdout | 0.08 px (worst frame 1.8 px) |
+| Shadow edge sweeping across the whole plane | 0.14 px |
+| 2× anamorphic, similarity model | 0.002 px |
+| ProRes 422 HQ / H.264 versions of a clean shot | 0.02 / 0.04 px |
+| Stress: occluder already in the reference, grain and flicker, no holdout | 0.09 px (worst frame 1.9 px) |
 
-The stress shot's worst frame is the first one after the reference, where the
-occluder is part of the template. A holdout removes it. Keyframe-only mode
-pauses on that shot instead of slipping.
+Known hard cases:
+- **Surface content that changes,** such as a screen playing video:
+  0.7 px mean, 5 px worst. Hold the content out.
+- **An occluder baked into the reference frame:** about 2 px on the first
+  frame after it. A holdout fixes it.
 
 ## Build
 
-Dependencies: CMake 3.24+, a C++20 compiler, Eigen 3.4, OpenEXR 3, nlohmann-json
-and doctest.
+Dependencies: CMake 3.24+, a C++20 compiler, Eigen 3.4+, OpenEXR 3, nlohmann-json
+and doctest; FFmpeg and OpenColorIO 2 for movies and OCIO (both optional:
+`-DPTRACK_WITH_FFMPEG=OFF`, `-DPTRACK_WITH_OCIO=OFF`).
 
 ```sh
 # Ubuntu
-sudo apt-get install ninja-build libeigen3-dev libopenexr-dev nlohmann-json3-dev doctest-dev
+sudo apt-get install ninja-build pkg-config libeigen3-dev libopenexr-dev nlohmann-json3-dev doctest-dev \
+    libavformat-dev libavcodec-dev libswscale-dev ffmpeg libopencolorio-dev
 # macOS
-brew install ninja eigen openexr nlohmann-json doctest
+brew install ninja pkg-config eigen openexr nlohmann-json doctest ffmpeg opencolorio
 
 cmake --preset release
 cmake --build --preset release
 ctest --preset release
 ```
 
-On Windows, use the `windows-vcpkg` preset (dependencies come from `vcpkg.json`).
+On Windows, use the `windows-vcpkg` preset (dependencies come from `vcpkg.json`;
+movie and OCIO support are off there for now).
 
 ## Try it
 
@@ -82,8 +103,9 @@ $B track --seq plate.%04d.exr --ref 1001 --range 1001-1100 \
 
 ```
 core/   tracking engine (no I/O or UI dependencies)
-io/     file formats: OpenEXR, sequences, track JSON (MOV next)
+io/     file formats: OpenEXR, movies (FFmpeg), OCIO, sequences, track JSON
 cli/    ptrack command-line tool
 tests/  unit, accuracy and end-to-end tests
-docs/   conventions, file formats, roadmap page
+docs/   conventions, file formats, Nuke check, roadmap page
+tools/  host-side scripts (Nuke check)
 ```
