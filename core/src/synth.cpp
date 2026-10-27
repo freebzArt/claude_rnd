@@ -91,8 +91,14 @@ SynthShot makeSynthShot(const SynthParams& p) {
         return out;
     };
 
+    // Box-Muller over raw mt19937 output: std::normal_distribution differs
+    // between standard libraries, and tests must see the same shot everywhere.
     std::mt19937 rng(p.seed);
-    std::normal_distribution<float> noise(0.0f, static_cast<float>(p.noiseSigma));
+    auto uniform = [&rng] { return (static_cast<double>(rng()) + 0.5) / 4294967296.0; };
+    auto noise = [&] {
+        const double u1 = uniform(), u2 = uniform();
+        return static_cast<float>(p.noiseSigma * std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * kPi * u2));
+    };
     const uint32_t seed = p.seed * 7919u;
     const int ref = p.referenceOffset;
     const Mat3 planeToRef = homographyFromCorners(planeRect, cornersAt(ref));
@@ -141,7 +147,7 @@ SynthShot makeSynthShot(const SynthParams& p) {
                     }
                 }
                 float v = static_cast<float>(acc / (ss * ss));
-                if (p.noiseSigma > 0.0) v += noise(rng);
+                if (p.noiseSigma > 0.0) v += noise();
                 img.at(x, y) = v;
             }
         }
