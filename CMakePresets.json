@@ -40,8 +40,8 @@
     { "name": "windows-vcpkg", "configurePreset": "windows-vcpkg" }
   ],
   "testPresets": [
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "ci", "configurePreset": "ci", "output": { "outputOnFailure": true } },
-    { "name": "windows-vcpkg", "configurePreset": "windows-vcpkg", "output": { "outputOnFailure": true } }
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true }, "execution": { "jobs": 4 } },
+    { "name": "ci", "configurePreset": "ci", "output": { "outputOnFailure": true }, "execution": { "jobs": 4 } },
+    { "name": "windows-vcpkg", "configurePreset": "windows-vcpkg", "output": { "outputOnFailure": true }, "execution": { "jobs": 4 } }
   ]
 }

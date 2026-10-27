@@ -8,6 +8,7 @@
 
 #include "ptrack/colour.h"
 #include "ptrack/export_nuke.h"
+#include "ptrack/frame_cache.h"
 #include "ptrack/io/exr.h"
 #include "ptrack/io/media.h"
 #include "ptrack/io/sequence.h"
@@ -17,6 +18,8 @@
 #include "ptrack/synth.h"
 #include "ptrack/tracker.h"
 #include "ptrack/warp.h"
+
+#include <Eigen/Dense>
 
 #include <algorithm>
 #include <cstdio>
@@ -303,16 +306,17 @@ int cmdTrack(const Args& a) {
     tp.reanchorAfter = a.getInt("reanchor-after", tp.reanchorAfter);
 
     const bool quiet = a.has("quiet");
+    FrameSource read = [&](int f) -> Image {
+        if (space) return space->apply(media->readRgb(f));
+        Image img = media->readChannel(f, channel);
+        applyCurve(curve, img);
+        return img;
+    };
+    // Decoded frames are cached, and the next ones decode while this one solves.
+    FrameCache cache(read, static_cast<size_t>(a.getInt("cache-mb", 2048)) << 20, a.getInt("read-ahead", 4));
     FrameSource source = [&](int f) -> Image {
-        Image img;
-        if (space) {
-            img = space->apply(media->readRgb(f));
-        } else {
-            img = media->readChannel(f, channel);
-            applyCurve(curve, img);
-        }
-        if (img.empty()) return img;
-        if (!quiet) std::cerr << "\rtracking frame " << f << "   " << std::flush;
+        Image img = cache.get(f);
+        if (!img.empty() && !quiet) std::cerr << "\rtracking frame " << f << "   " << std::flush;
         return img;
     };
     // With overscan the tracked images are larger than the display window:
@@ -380,13 +384,19 @@ int cmdNuke(const Args& a) {
 int cmdEval(const Args& a) {
     const io::TrackDocument track = io::readTrackJson(a.require("track"));
     const io::TrackDocument truth = io::readTrackJson(a.require("truth"));
+    // Truth maps its own reference frame to each frame; re-base it onto the
+    // track's reference so both map the same coordinates.
+    const TrackedFrame* tref = truth.track.find(track.track.referenceFrame);
+    if (!tref) throw std::runtime_error("the truth has no frame " + std::to_string(track.track.referenceFrame));
+    const Mat3 rebase = tref->h.inverse();
     double sum = 0.0, worst = 0.0;
     int n = 0, worstFrame = 0;
     for (const TrackedFrame& f : track.track.frames) {
         const TrackedFrame* t = truth.track.find(f.frame);
         if (!t) continue;
+        const Mat3 truthH = t->h * rebase;
         for (int c = 0; c < 4; ++c) {
-            const double d = (applyH(f.h, track.surface[c]) - applyH(t->h, track.surface[c])).norm();
+            const double d = (applyH(f.h, track.surface[c]) - applyH(truthH, track.surface[c])).norm();
             sum += d;
             ++n;
             if (d > worst) {
@@ -423,7 +433,7 @@ void usage() {
                [--model perspective] [--strategy hybrid] [--loss huber] [--levels N]
                [--channel luma|R|G|B|A|layer.chan] [--layer L] [--part N] [--overscan]
                [--pixel-aspect N] [--normalize none|bandpass|local-contrast]
-               [--normalize-radius PX] [--normalize-fine PX]
+               [--normalize-radius PX] [--normalize-fine PX] [--cache-mb N] [--read-ahead N]
                [--curve auto|acescct|none] [--ocio CONFIG --from SPACE --to SPACE]
                [--out track.json] [--nuke FILE|-] [--clipboard] [--stabilize] [--name NODE]
   ptrack nuke  --track FILE [--stabilize] [--name NODE] [--nuke FILE|-] [--clipboard]
