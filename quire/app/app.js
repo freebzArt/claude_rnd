@@ -9,7 +9,7 @@
 /* =========================================================================
  * Constants
  * ========================================================================= */
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const FORMAT = 1;
 const EXT = '.quire';
 const HAS_FS = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function';
@@ -52,7 +52,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fmt = (n) => (n || 0).toLocaleString();
 const byId = (arr, id) => arr.find((x) => x.id === id);
-const plural = (n, w) => `${fmt(n)} ${w}${n === 1 ? '' : 's'}`;
+const plural = (n, w, pl) => `${fmt(n)} ${n === 1 ? w : pl || `${w}s`}`;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const safeName = (s) => (s || 'Untitled').replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 80) || 'Untitled';
@@ -118,6 +118,7 @@ const ICONS = {
   restore: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   cmd: '<path d="m9 18 6-12"/>',
   thread: '<path d="M4 6h16M4 12h10M4 18h13"/>',
+  cloud: '<path d="M17.5 19H8a6 6 0 1 1 1.3-11.86A5 5 0 0 1 19 9.5a4.5 4.5 0 0 1-1.5 9.5Z"/>',
 };
 function icon(name) {
   const s = h('span', { class: 'ico', 'aria-hidden': 'true' });
@@ -379,6 +380,7 @@ function touch() {
   trackDaily();
   scheduleSave();
   if (!fileHandle) scheduleBackup();
+  if (project.meta.cloud) scheduleSync();
   renderStatus();
 }
 
@@ -413,9 +415,12 @@ async function saveNow({ interactive = false } = {}) {
     if (perm !== 'granted' && interactive) perm = await fileHandle.requestPermission({ mode: 'readwrite' });
     if (perm !== 'granted') { needsPerm = true; return; }
     needsPerm = false;
+    let out = data;
+    if (await checkDisk()) out = serialize(); // merged someone else's changes in first
     const w = await fileHandle.createWritable();
-    await w.write(data);
+    await w.write(out);
     await w.close();
+    try { disk = { modified: (await fileHandle.getFile()).lastModified, data: out }; } catch { /* keep going */ }
     if (seq === changeSeq) dirty = false;
     lastSaved = Date.now();
     saveError = null;
@@ -429,6 +434,30 @@ async function saveNow({ interactive = false } = {}) {
   }
 }
 
+/**
+ * If the file on disk changed since Quire last read or wrote it (e.g. a sync client brought in an edit
+ * made on another computer), merge that version into the open story. Returns true if it merged.
+ */
+let disk = { modified: 0, data: null };
+async function checkDisk() {
+  if (!fileHandle || !disk.modified || !project) return false;
+  let f;
+  try { f = await fileHandle.getFile(); } catch { return false; }
+  if (f.lastModified === disk.modified) return false;
+  const text = await f.text();
+  const before = disk.data;
+  disk = { modified: f.lastModified, data: text };
+  if (text === before) return false;
+  let other;
+  try { other = JSON.parse(text); } catch { return false; } // half-written by a sync client; look again next time
+  if (!other || !other.meta || other.meta.id !== project.meta.id) { toast('The story file was replaced with a different story on disk. Quire kept your version.'); return false; }
+  if (QuireMerge.sameDoc(other, serialize())) return false;
+  flushEditors();
+  const m = QuireMerge.merge(before ? JSON.parse(before) : null, JSON.parse(serialize()), normalize(other));
+  applyMerged(m, 'The file was changed on another computer');
+  return true;
+}
+
 async function saveAs() {
   if (!project) return;
   flushEditors();
@@ -438,6 +467,7 @@ async function saveAs() {
     fileHandle = handle;
     fileName = handle.name;
     saveError = null;
+    disk = { modified: 0, data: null };
     await saveNow({ interactive: true });
     await addRecent(handle);
     toast(`Saving to ${handle.name}`);
@@ -447,8 +477,8 @@ async function saveAs() {
   renderStatus();
 }
 
-function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(name, content, type) {
+  const url = URL.createObjectURL(content instanceof Blob ? content : new Blob([content], { type }));
   const a = h('a', { href: url, download: name });
   document.body.append(a);
   a.click();
@@ -496,7 +526,7 @@ async function listBackups() {
 /* =========================================================================
  * Opening and closing
  * ========================================================================= */
-async function openProject(data, handle = null, { recoverCheck = true } = {}) {
+async function openProject(data, handle = null, { recoverCheck = true, modified = 0 } = {}) {
   let p;
   try { p = normalize(typeof data === 'string' ? JSON.parse(data) : data); } catch (e) {
     toast(e instanceof SyntaxError ? 'That file isn’t valid Quire JSON.' : e.message);
@@ -506,6 +536,9 @@ async function openProject(data, handle = null, { recoverCheck = true } = {}) {
   fileHandle = handle;
   fileName = handle ? handle.name : '';
   dirty = false; saveError = null; needsPerm = false; changeSeq = 0;
+  disk = handle && modified ? { modified, data: typeof data === 'string' ? data : null } : { modified: 0, data: null };
+  undoStack.length = 0; redoStack.length = 0;
+  sync.state = project.meta.cloud ? 'idle' : 'off';
   const first = scenes()[0];
   ui.view = 'write';
   ui.sel = first ? { kind: 'scene', id: first.id } : { kind: 'book', id: null };
@@ -517,6 +550,7 @@ async function openProject(data, handle = null, { recoverCheck = true } = {}) {
   renderAll();
   if (handle) addRecent(handle);
   idb.set('last', project.meta.id);
+  if (project.meta.cloud) setTimeout(() => syncStory({ force: true }), 50);
 
   // If the browser holds newer work than the file (e.g. a crash before the last write), offer it.
   if (recoverCheck) {
@@ -540,7 +574,7 @@ async function openFile() {
     try {
       const [handle] = await window.showOpenFilePicker({ types: OPEN_TYPES, multiple: false });
       const file = await handle.getFile();
-      await openProject(await file.text(), handle);
+      await openProject(await file.text(), handle, { modified: file.lastModified });
     } catch (e) {
       if (e.name !== 'AbortError') toast(`Couldn’t open: ${e.message}`);
     }
@@ -563,7 +597,7 @@ async function openRecent(entry) {
     if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'readwrite' });
     if (perm !== 'granted') { toast('Quire needs permission to open that file.'); return; }
     const file = await entry.handle.getFile();
-    await openProject(await file.text(), entry.handle);
+    await openProject(await file.text(), entry.handle, { modified: file.lastModified });
   } catch (e) {
     console.warn(e);
     toast('Couldn’t open that file. It may have been moved or renamed.');
@@ -576,13 +610,14 @@ async function openHandle(handle) {
   try {
     if (handle.kind !== 'file') return;
     const file = await handle.getFile();
-    await openProject(await file.text(), handle);
+    await openProject(await file.text(), handle, { modified: file.lastModified });
   } catch (e) { toast(`Couldn’t open: ${e.message}`); }
 }
 
 async function closeProject() {
   if (!project) return;
   await saveNow();
+  if (project.meta.cloud) await syncStory({ force: true });
   if (!fileHandle && dirty && !(await confirmBox('This story hasn’t been saved to a file. It stays in this browser’s backups, but a file is safer. Close anyway?', { ok: 'Close', cancel: 'Keep writing' }))) return;
   project = null; fileHandle = null; fileName = '';
   showWelcome();
@@ -885,6 +920,7 @@ function editorFor(obj, placeholder = 'Begin writing…') {
   const markEmpty = () => el.classList.toggle('is-empty', !el.textContent.trim() && el.querySelectorAll('p').length <= 1);
   markEmpty();
   el.addEventListener('input', () => {
+    lastInputAt = Date.now();
     if (el.firstChild && el.firstChild.nodeType === 3) document.execCommand('formatBlock', false, 'p');
     pending.add(el);
     markEmpty();
@@ -1348,7 +1384,7 @@ function currentChapter() {
   return project.manuscript[project.manuscript.length - 1];
 }
 function addScene(chId, index, { stay = false } = {}) {
-  flushEditors();
+  checkpoint('New scene');
   let ch = chId ? chapterOf(chId) : currentChapter();
   if (!ch) { ch = mkChapter('Chapter One'); project.manuscript.push(ch); }
   if (index == null) index = ui.sel.kind === 'scene' && ch === locateScene(ui.sel.id)?.ch ? locateScene(ui.sel.id).index + 1 : ch.children.length;
@@ -1363,7 +1399,7 @@ function addScene(chId, index, { stay = false } = {}) {
 }
 const NUM_WORDS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
 function addChapter({ stay = false, after } = {}) {
-  flushEditors();
+  checkpoint('New chapter');
   const n = project.manuscript.length + 1;
   const ch = mkChapter(`Chapter ${NUM_WORDS[n - 1] || n}`);
   ch.children.push(mkScene());
@@ -1374,10 +1410,11 @@ function addChapter({ stay = false, after } = {}) {
   select('chapter', ch.id);
   setTimeout(focusTitle, 30);
 }
-async function deleteScene(s) {
+function deleteScene(s) {
   const l = locateScene(s.id);
   if (!l) return;
-  if (wcOf(s) > 0 && !(await confirmBox(`Delete “${s.title || 'Untitled scene'}” and its ${plural(wcOf(s), 'word')}? Snapshots keep older versions for a while.`))) return;
+  const name = `“${s.title || 'Untitled scene'}”`;
+  checkpoint(`Delete ${name}`);
   l.ch.children.splice(l.index, 1);
   touch();
   if (ui.sel.kind === 'scene' && ui.sel.id === s.id) {
@@ -1385,10 +1422,12 @@ async function deleteScene(s) {
     ui.sel = next ? { kind: 'scene', id: next.id } : { kind: 'chapter', id: l.ch.id };
   }
   renderAll();
+  toast(`Deleted ${name}`, { label: 'Undo', run: undo });
 }
 async function deleteChapter(ch) {
   const words = chapterWC(ch);
-  if ((words > 0 || ch.children.length > 1) && !(await confirmBox(`Delete “${ch.title}” with ${plural(ch.children.length, 'scene')} and ${plural(words, 'word')}?`))) return;
+  if ((words > 0 || ch.children.length > 1) && !(await confirmBox(`Delete “${ch.title}” with ${plural(ch.children.length, 'scene')} and ${plural(words, 'word')}? (Ctrl+Z brings it back.)`))) return;
+  checkpoint(`Delete “${ch.title}”`);
   const i = project.manuscript.indexOf(ch);
   project.manuscript.splice(i, 1);
   touch();
@@ -1396,6 +1435,7 @@ async function deleteChapter(ch) {
   renderAll();
 }
 function duplicateScene(s) {
+  checkpoint('Duplicate scene');
   const l = locateScene(s.id);
   const copy = { ...JSON.parse(JSON.stringify(s, (k, v) => (k.startsWith('_') ? undefined : v))), id: uid('s'), title: `${s.title || 'Untitled scene'} (copy)` };
   l.ch.children.splice(l.index + 1, 0, copy);
@@ -1406,6 +1446,7 @@ function moveScene(id, toChId, index) {
   const l = locateScene(id);
   const to = chapterOf(toChId);
   if (!l || !to) return;
+  checkpoint('Move scene');
   l.ch.children.splice(l.index, 1);
   if (l.ch === to && l.index < index) index--;
   to.children.splice(clamp(index, 0, to.children.length), 0, l.scene);
@@ -1415,6 +1456,7 @@ function moveScene(id, toChId, index) {
 function moveChapter(id, index) {
   const i = project.manuscript.findIndex((c) => c.id === id);
   if (i < 0) return;
+  checkpoint('Move chapter');
   const [ch] = project.manuscript.splice(i, 1);
   if (i < index) index--;
   project.manuscript.splice(clamp(index, 0, project.manuscript.length), 0, ch);
@@ -1433,6 +1475,7 @@ function addEntity(kind) {
 }
 async function deleteEntity(kind, e) {
   if (!(await confirmBox(`Delete ${e.name || `this ${ENTITY[kind].one}`}? Scenes stay, but they lose the tag.`))) return;
+  checkpoint(`Delete ${e.name || ENTITY[kind].one}`);
   project[kind] = project[kind].filter((x) => x !== e);
   for (const s of scenes()) {
     if (kind === 'characters') { s.characters = s.characters.filter((id) => id !== e.id); if (s.pov === e.id) s.pov = ''; } else if (s.location === e.id) s.location = '';
@@ -1451,6 +1494,7 @@ function addThread() {
 }
 async function deleteThread(t) {
   if (!(await confirmBox(`Delete the plot thread “${t.name}”? Scenes stay, but they lose the tag.`))) return;
+  checkpoint(`Delete “${t.name}”`);
   project.threads = project.threads.filter((x) => x !== t);
   for (const s of scenes()) s.threads = s.threads.filter((id) => id !== t.id);
   touch();
@@ -1466,12 +1510,13 @@ function addNote() {
   renderAll();
   setTimeout(focusTitle, 30);
 }
-async function deleteNote(n) {
-  if (textOf(n.content).trim() && !(await confirmBox(`Delete the note “${n.title || 'Untitled note'}”?`))) return;
+function deleteNote(n) {
+  checkpoint(`Delete note “${n.title || 'Untitled note'}”`);
   project.notes = project.notes.filter((x) => x !== n);
   if (ui.noteSel === n.id) ui.noteSel = project.notes[0]?.id || null;
   touch();
   renderAll();
+  toast('Note deleted', { label: 'Undo', run: undo });
 }
 
 /** Create a character, place or thread by name and tag it on the scene, without leaving the page. */
@@ -1493,6 +1538,273 @@ async function quickAdd(kind, s) {
   toast(`Added ${name}. Fill in the details under ${kind === 'threads' ? 'Story map' : ENTITY[kind].title}.`);
 }
 
+/* ---------- undo and redo for structure (text undo is the browser's own Ctrl+Z) ---------- */
+const undoStack = [], redoStack = [];
+function checkpoint(label) {
+  flushEditors();
+  undoStack.push({ label, data: serialize(), sel: { ...ui.sel } });
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+}
+function restoreState(c) {
+  replaceProject(c.data);
+  ui.sel = c.sel;
+  validateSel();
+  touch();
+  renderAll();
+}
+function undo() {
+  const c = undoStack.pop();
+  if (!c) { toast('Nothing to undo'); return; }
+  flushEditors();
+  redoStack.push({ label: c.label, data: serialize(), sel: { ...ui.sel } });
+  restoreState(c);
+  toast(`Undone: ${c.label}`, { label: 'Redo', run: redo });
+}
+function redo() {
+  const c = redoStack.pop();
+  if (!c) { toast('Nothing to redo'); return; }
+  flushEditors();
+  undoStack.push({ label: c.label, data: serialize(), sel: { ...ui.sel } });
+  restoreState(c);
+  toast(`Redone: ${c.label}`);
+}
+/** Swap in a whole new copy of the story (undo, sync, merge). Caller has flushed editors. */
+function replaceProject(data) {
+  pending.clear();
+  editors.clear();
+  project = normalize(typeof data === 'string' ? JSON.parse(data) : data);
+}
+function validateSel() {
+  const { kind, id } = ui.sel;
+  if ((kind === 'scene' && !locateScene(id)) || (kind === 'chapter' && !chapterOf(id))) ui.sel = { kind: 'book', id: null };
+  for (const k of ['characters', 'locations']) if (ui.entitySel[k] && !byId(project[k], ui.entitySel[k])) ui.entitySel[k] = null;
+  if (ui.noteSel && !byId(project.notes, ui.noteSel)) ui.noteSel = project.notes[0]?.id || null;
+}
+
+/** Remember where the caret is (scene id + character offset), so a re-render can put it back. */
+function saveCaret() {
+  const el = document.activeElement;
+  if (!el || !el.classList?.contains('prose')) return null;
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  r.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+  return { id: el.dataset.id, offset: r.toString().length, scroll: $('#view').scrollTop };
+}
+function restoreCaret(c) {
+  if (!c) return;
+  const el = $(`#view .prose[data-id="${c.id}"]`);
+  if (!el) return;
+  $('#view').scrollTop = c.scroll;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let left = c.offset, n;
+  while ((n = walker.nextNode())) {
+    if (left <= n.data.length) {
+      el.focus({ preventScroll: true });
+      const r = document.createRange();
+      r.setStart(n, left); r.collapse(true);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      return;
+    }
+    left -= n.data.length;
+  }
+  el.focus({ preventScroll: true });
+}
+
+/** Put a merge result in place, keeping the writer where they were. */
+function applyMerged(m, why) {
+  const caret = saveCaret();
+  const sel = { ...ui.sel };
+  replaceProject(m.project);
+  ui.sel = sel;
+  validateSel();
+  touch();
+  renderAll();
+  restoreCaret(caret);
+  if (m.copies) toast(`${why}. ${plural(m.copies, 'scene')} had been changed in both places, so both versions are kept, marked “(other version)”.`);
+  else if (m.conflicts.length) toast(`${why}. Merged; where both copies changed the same note, both texts are kept.`);
+  else toast(`${why}. Merged.`);
+}
+
+/* ---------- split and merge scenes ---------- */
+const trimEmpty = (html) => html.replace(/^(<p><br><\/p>)+/, '').replace(/(<p><br><\/p>)+$/, '') || '<p><br></p>';
+function caretEditor() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  let n = sel.anchorNode;
+  while (n && !(n.nodeType === 1 && n.classList.contains('prose'))) n = n.parentNode;
+  return n;
+}
+function splitScene() {
+  const el = caretEditor();
+  const s = el && editors.get(el);
+  if (!s || !locateScene(s.id)) { toast('Click in a scene where the new scene should begin, then split.'); return; }
+  checkpoint('Split scene');
+  const r = getSelection().getRangeAt(0).cloneRange();
+  r.collapse(true);
+  r.setEnd(el, el.childNodes.length);
+  const box = document.createElement('div');
+  box.append(r.extractContents());
+  s.content = trimEmpty(sanitizeHTML(el.innerHTML));
+  s._wc = null;
+  const l = locateScene(s.id);
+  const next = {
+    ...mkScene(`${s.title || 'Untitled scene'} (continued)`), status: s.status, pov: s.pov, characters: [...s.characters],
+    location: s.location, threads: [...s.threads], when: s.when, content: trimEmpty(sanitizeHTML(box.innerHTML)),
+  };
+  l.ch.children.splice(l.index + 1, 0, next);
+  touch();
+  select('scene', next.id);
+  setTimeout(focusTitle, 30);
+  toast('Scene split in two', { label: 'Undo', run: undo });
+}
+function mergeWithNext(s) {
+  const l = locateScene(s.id);
+  const next = l && l.ch.children[l.index + 1];
+  if (!next) return;
+  checkpoint('Merge scenes');
+  s.content = trimEmpty(trimEmpty(s.content) + trimEmpty(next.content));
+  s._wc = null;
+  for (const k of ['characters', 'threads']) for (const id of next[k]) if (!s[k].includes(id)) s[k].push(id);
+  for (const k of ['synopsis', 'notes']) if (next[k]) s[k] = s[k] ? `${s[k]}\n${next[k]}` : next[k];
+  l.ch.children.splice(l.index + 1, 1);
+  touch();
+  select('scene', s.id);
+  toast(`Merged “${next.title || 'Untitled scene'}” into this scene`, { label: 'Undo', run: undo });
+}
+
+/* ---------- find and replace ---------- */
+function openReplace() {
+  if (!project) return;
+  flushEditors();
+  const find = h('input', { class: 'field', placeholder: 'Find', spellcheck: 'false' });
+  const repl = h('input', { class: 'field', placeholder: 'Replace with', spellcheck: 'false' });
+  const opts = { cs: false, ww: false };
+  const box = (key, label) => h('label', { class: 'chk' }, h('input', { type: 'checkbox', onchange: (e) => { opts[key] = e.target.checked; update(); } }), label);
+  const info = h('div', { class: 'hint' });
+  const list = h('div', { class: 'appear fr-list' });
+  const regex = () => {
+    if (!find.value) return null;
+    let src = escRe(find.value);
+    if (opts.ww) src = `(?<![\\p{L}\\p{N}])${src}(?![\\p{L}\\p{N}])`;
+    return new RegExp(src, opts.cs ? 'gu' : 'giu');
+  };
+  const update = debounce(() => {
+    const re = regex();
+    list.replaceChildren();
+    if (!re) { info.textContent = 'Searches every scene in the manuscript.'; return; }
+    let total = 0;
+    for (const ch of project.manuscript) {
+      for (const sc of ch.children) {
+        const n = (plainOf(sc).match(re) || []).length;
+        if (!n) continue;
+        total += n;
+        list.append(h('button', { onclick: () => { m.close(); select('scene', sc.id); setTimeout(() => findInView(find.value), 60); } },
+          h('span', { class: `dot st-${sc.status}` }), h('span', {}, sc.title || 'Untitled scene'), h('span', { class: 'muted' }, ch.title), h('span', { class: 'how' }, plural(n, 'match', 'matches'))));
+      }
+    }
+    info.textContent = total ? `${plural(total, 'match', 'matches')} in ${plural(list.children.length, 'scene')}` : 'No matches';
+  }, 120);
+  find.addEventListener('input', update);
+  const m = modal({
+    title: 'Find and replace', wide: true,
+    body: h('div', { class: 'fr' }, find, repl, h('div', { class: 'fr-opts' }, box('cs', 'Match case'), box('ww', 'Whole words')), info, list),
+    actions: [{ label: 'Close' }, { label: 'Replace all', primary: true, run: () => {
+      const re = regex();
+      if (!re) return false;
+      const n = replaceAll(re, repl.value);
+      if (!n) { toast('No matches to replace'); return false; }
+      toast(`Replaced ${plural(n, 'match', 'matches')}`, { label: 'Undo', run: undo });
+      return true;
+    } }],
+  });
+  update();
+}
+function replaceAll(re, replacement) {
+  checkpoint('Replace all');
+  let total = 0;
+  for (const sc of scenes()) {
+    const frag = parseFragment(sc.content);
+    const walker = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    let n = 0;
+    for (const t of nodes) {
+      const before = n;
+      const v = t.data.replace(re, () => { n++; return replacement; });
+      if (n !== before) t.data = v;
+    }
+    if (n) {
+      const div = document.createElement('div');
+      div.append(frag);
+      sc.content = sanitizeHTML(div.innerHTML);
+      sc._wc = null;
+      total += n;
+    }
+  }
+  if (total) { touch(); renderAll(); } else undoStack.pop();
+  return total;
+}
+
+/* ---------- import and export ---------- */
+function pickFile(accept) {
+  return new Promise((res) => {
+    const input = h('input', { type: 'file', accept, style: { display: 'none' } });
+    input.addEventListener('change', () => { res(input.files[0] || null); input.remove(); });
+    input.addEventListener('cancel', () => { res(null); input.remove(); });
+    document.body.append(input);
+    input.click();
+  });
+}
+const DOC_TYPES = '.docx,.md,.markdown,.txt,.text';
+async function parseDocument(file) {
+  const name = file.name.replace(/\.[^.]+$/, '');
+  if (/\.docx$/i.test(file.name)) return QuireDocs.importDocx(new Uint8Array(await file.arrayBuffer()), name);
+  if (/\.(md|markdown|txt|text)$/i.test(file.name)) return QuireDocs.importText(await file.text(), name, /\.(md|markdown)$/i.test(file.name));
+  throw new Error('Quire can import Word (.docx), Markdown (.md) and text (.txt) files.');
+}
+function chaptersFrom(parsed) {
+  return parsed.chapters.map((c) => ({
+    ...mkChapter(c.title || 'Untitled chapter'),
+    children: c.scenes.map((sc) => ({ ...mkScene(sc.title || ''), content: sanitizeHTML(sc.html || '') })),
+  }));
+}
+async function importIntoStory(file) {
+  file = file || await pickFile(DOC_TYPES);
+  if (!file) return;
+  try {
+    const chs = chaptersFrom(await parseDocument(file));
+    if (!chs.length) { toast('Found nothing to import in that file.'); return; }
+    checkpoint(`Import ${file.name}`);
+    project.manuscript.push(...chs);
+    touch();
+    select('chapter', chs[0].id);
+    const n = chs.reduce((a, c) => a + c.children.length, 0);
+    toast(`Imported ${plural(chs.length, 'chapter')} and ${plural(n, 'scene')}`, { label: 'Undo', run: undo });
+  } catch (e) { console.error(e); toast(`Couldn’t import: ${e.message}`); }
+}
+async function newFromDraft() {
+  const file = await pickFile(DOC_TYPES);
+  if (!file) return;
+  try {
+    const parsed = await parseDocument(file);
+    const p = newProject(parsed.title || file.name.replace(/\.[^.]+$/, ''));
+    const chs = chaptersFrom(parsed);
+    if (chs.length) p.manuscript = chs;
+    await openProject(p, null, { recoverCheck: false });
+    toast(`Imported ${plural(totalWC(), 'word')}. ${HAS_FS ? 'Choose where to save it.' : ''}`);
+    if (HAS_FS) saveAs();
+  } catch (e) { console.error(e); toast(`Couldn’t import: ${e.message}`); }
+}
+function exportDocx() {
+  flushEditors();
+  const bytes = QuireDocs.exportDocx(project, { countWords: totalWC });
+  download(`${safeName(project.meta.title)}.docx`, new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+  toast('Exported a Word manuscript');
+}
+
 function sceneMenu(x, y, s) {
   const l = locateScene(s.id);
   popMenu(x, y, [
@@ -1500,6 +1812,7 @@ function sceneMenu(x, y, s) {
     { label: 'Rename', run: () => { select('scene', s.id); focusTitle(); } },
     { label: 'New scene after', run: () => addScene(l.ch.id, l.index + 1) },
     { label: 'Duplicate', run: () => duplicateScene(s) },
+    { label: 'Merge with next scene', disabled: !l.ch.children[l.index + 1], run: () => mergeWithNext(s) },
     '-',
     { head: 'Status' },
     ...STATUSES.map(([v, label]) => ({ label: `${s.status === v ? '✓ ' : ''}${label}`, run: () => { s.status = v; touch(); renderAll(); } })),
@@ -1619,7 +1932,7 @@ function modal({ title, body, actions = [{ label: 'Close', primary: true }], wid
   back.append(box);
   document.body.append(back);
   document.addEventListener('keydown', onKey, true);
-  setTimeout(() => (box.querySelector('input, .btn.primary, .btn.danger') || box).focus(), 20);
+  setTimeout(() => { if (!box.contains(document.activeElement)) (box.querySelector('input, .btn.primary, .btn.danger') || box).focus(); }, 20);
   return { close, box };
 }
 function promptBox(title, placeholder = '', okLabel = 'Add') {
@@ -1643,12 +1956,304 @@ function confirmBox(message, { ok = 'Delete', cancel = 'Cancel' } = {}) {
 }
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, action) {
   const t = $('#toast');
-  t.textContent = msg;
+  t.replaceChildren(h('span', {}, msg));
+  if (action) t.append(h('button', { class: 'toast-act', onclick: () => { t.classList.remove('show'); action.run(); } }, action.label));
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action || msg.length > 80 ? 7000 : 2800);
+}
+
+/* =========================================================================
+ * Cloud sync (optional): your own Cloudflare Worker + R2. See docs/cloud-sync.md.
+ *
+ * Local-first: the story on this computer (its .quire file, plus the browser's copy) is always what
+ * Quire opens and saves. Sync runs in the background whenever there's a connection and never blocks
+ * opening or writing. Per device, IndexedDB keeps:
+ *   sync:<id>    the version this computer and the cloud last agreed on (the merge base) + its revision
+ *   remote:<id>  the newest cloud copy downloaded so far, so even changes made on your other computer
+ *                can be opened offline, as long as Quire was online at some point after they were made
+ *   cloudlist    the cloud's list of stories, for the welcome screen when offline
+ * ========================================================================= */
+const CLOUD_KEY = 'quire:cloud';
+function cloudCfg() { try { return JSON.parse(localStorage.getItem(CLOUD_KEY) || 'null'); } catch { return null; } }
+const cloudOn = () => { const c = cloudCfg(); return !!(c && c.url && c.token); };
+const sync = { state: 'off', at: 0, msg: '' };
+let syncBusy = false, syncQueued = false, syncRetries = 0, lastInputAt = 0;
+const scheduleSync = debounce(() => syncStory(), 5000);
+
+async function api(path, { method = 'GET', body, headers = {}, timeout = 15000 } = {}) {
+  const c = cloudCfg();
+  if (!c) throw new Error('Cloud sync is not set up on this computer.');
+  const res = await fetch(`${c.url.replace(/\/+$/, '')}/api${path}`, {
+    method, body, cache: 'no-store',
+    headers: { Authorization: `Bearer ${c.token}`, ...headers },
+    signal: AbortSignal.timeout ? AbortSignal.timeout(timeout) : undefined,
+  });
+  if (res.status === 401) throw Object.assign(new Error('The sync key was not accepted.'), { auth: true });
+  return res;
+}
+async function cloudList() {
+  const r = await api('/stories');
+  const j = r.ok ? await r.json().catch(() => null) : null;
+  // A hotel or plane Wi-Fi login page answers with HTML: treat that as offline, not as an empty cloud.
+  if (!j || !Array.isArray(j.stories)) throw new Error('No answer from the sync server');
+  await idb.set('cloudlist', { at: Date.now(), stories: j.stories });
+  return j.stories;
+}
+async function cloudGet(id, rev) {
+  const r = await api(`/stories/${encodeURIComponent(id)}`, { headers: rev ? { 'If-None-Match': rev } : {} });
+  if (r.status === 304) return { status: 304 };
+  if (r.status === 404) return { status: 404 };
+  if (!r.ok) throw new Error(`Sync server error ${r.status}`);
+  const data = await r.text();
+  const rv = r.headers.get('ETag');
+  let ok = false;
+  try { ok = JSON.parse(data).format === 'quire'; } catch { /* not ours */ }
+  if (!rv || !ok) throw new Error('No answer from the sync server');
+  return { status: 200, rev: rv, data };
+}
+async function cloudPut(id, data, rev) {
+  const r = await api(`/stories/${encodeURIComponent(id)}`, {
+    method: 'PUT', body: data, timeout: 30000,
+    headers: { 'Content-Type': 'application/json', ...(rev ? { 'If-Match': rev } : { 'If-None-Match': '*' }) },
+  });
+  if (r.status === 412) return { status: 412 };
+  if (!r.ok) throw new Error(`Sync server error ${r.status}`);
+  return { status: 200, rev: r.headers.get('ETag') };
+}
+
+function setSync(state, msg = '') {
+  sync.state = state;
+  sync.msg = msg;
+  if (state === 'ok') sync.at = Date.now();
+  renderStatus();
+  const live = $('[data-live="sync"]');
+  if (live) live.textContent = syncLabel().text;
+}
+function syncLabel() {
+  if (!project) return { text: '', cls: '' };
+  if (!project.meta.cloud) return { text: cloudOn() ? 'Not synced' : '', cls: '' };
+  if (!cloudOn()) return { text: 'Sync not set up on this computer', cls: 'warn' };
+  switch (sync.state) {
+    case 'syncing': return { text: 'Syncing…', cls: '' };
+    case 'ok': return { text: `Synced ${ago(sync.at)}`, cls: 'ok' };
+    case 'offline': return { text: 'Offline · saved on this computer', cls: '' };
+    case 'auth': return { text: 'Sync key not accepted', cls: 'err' };
+    case 'error': return { text: 'Sync problem: retrying', cls: 'warn' };
+    default: return { text: 'Waiting to sync', cls: '' };
+  }
+}
+
+/**
+ * Bring this story and its cloud copy together. Safe to call any time; never blocks writing.
+ *  1. Ask the cloud for anything newer than our base (304 if nothing). Offline: use the newest
+ *     cloud copy downloaded earlier, if it's newer than our base.
+ *  2. Newer cloud copy: three-way merge it into the open story.
+ *  3. Online and we have changes the cloud lacks: upload, guarded by If-Match so two computers
+ *     can never overwrite each other (412 -> fetch, merge, try again).
+ */
+async function syncStory({ force = false } = {}) {
+  if (!project || !project.meta.cloud) return;
+  if (!cloudOn()) { setSync('nocfg'); return; }
+  if (syncBusy) { syncQueued = true; return; }
+  if (!force && Date.now() - lastInputAt < 2500) { scheduleSync(); return; } // don't redraw mid-sentence
+  syncBusy = true;
+  const id = project.meta.id;
+  setSync('syncing');
+  let offline = navigator.onLine === false;
+  try {
+    let base = await idb.get(`sync:${id}`);
+    let res = { status: 304 };
+    if (!offline) {
+      try { res = await cloudGet(id, base && base.rev); } catch (e) { if (e.auth) throw e; offline = true; }
+    }
+    if (offline) {
+      const c = await idb.get(`remote:${id}`);
+      if (c && (!base || c.rev !== base.rev)) res = { status: 200, rev: c.rev, data: c.data, cached: true };
+    }
+    if (project?.meta.id !== id) return;
+    if (res.status === 200) {
+      if (!res.cached) await idb.set(`remote:${id}`, { rev: res.rev, data: res.data, at: Date.now() });
+      flushEditors();
+      const local = serialize();
+      const remote = normalize(JSON.parse(res.data));
+      if (!base || !QuireMerge.sameDoc(base.data, local)) {
+        const m = QuireMerge.merge(base ? JSON.parse(base.data) : null, JSON.parse(local), remote);
+        if (!QuireMerge.sameDoc(local, m.project)) applyMerged(m, 'Brought in changes from your other computer');
+      } else if (!QuireMerge.sameDoc(local, remote)) {
+        applyMerged({ project: remote, conflicts: [], copies: 0 }, 'Updated with changes from your other computer');
+      }
+      base = { rev: res.rev, data: res.data, at: Date.now() };
+      await idb.set(`sync:${id}`, base);
+    }
+    if (!offline) {
+      flushEditors();
+      const now = serialize();
+      if (res.status === 404 || !base || !QuireMerge.sameDoc(base.data, now)) {
+        const put = await cloudPut(id, now, res.status === 404 ? null : base && base.rev);
+        if (put.status === 412) {
+          if (++syncRetries > 4) { syncRetries = 0; throw new Error('The cloud copy keeps changing; will try again shortly.'); }
+          syncQueued = true;
+        } else {
+          syncRetries = 0;
+          base = { rev: put.rev, data: now, at: Date.now() };
+          await idb.set(`sync:${id}`, base);
+          await idb.set(`remote:${id}`, { rev: put.rev, data: now, at: Date.now() });
+        }
+      }
+      if (!syncQueued) setSync('ok');
+    } else setSync('offline');
+  } catch (e) {
+    console.warn('Sync:', e);
+    setSync(e.auth ? 'auth' : 'error', e.message);
+  } finally {
+    syncBusy = false;
+    if (syncQueued) { syncQueued = false; setTimeout(() => syncStory({ force: true }), 300); }
+  }
+}
+
+/** Download every cloud story that changed, so all of them open offline later. */
+let prefetching = false;
+async function prefetchCloud() {
+  if (!cloudOn() || prefetching || navigator.onLine === false) return;
+  prefetching = true;
+  try {
+    const list = await cloudList();
+    for (const st of list) {
+      const c = await idb.get(`remote:${st.id}`);
+      if (c && c.rev === st.rev) continue;
+      const r = await cloudGet(st.id, c && c.rev);
+      if (r.status === 200) await idb.set(`remote:${st.id}`, { rev: r.rev, data: r.data, at: Date.now() });
+    }
+    await idb.set('cloudfetched', Date.now());
+    if (document.body.classList.contains('welcome-open')) showWelcome();
+    if (project?.meta.cloud) {
+      const c = await idb.get(`remote:${project.meta.id}`), b = await idb.get(`sync:${project.meta.id}`);
+      if (c && (!b || c.rev !== b.rev)) syncStory();
+    }
+  } catch (e) { if (e.auth) setSync('auth'); console.warn('Cloud prefetch:', e.message); } finally { prefetching = false; }
+}
+
+/** Open a story from the cloud list: its own file if this computer has one, else the downloaded copy. */
+async function openCloudStory(st) {
+  const rec = (await getRecent()).find((r) => r.id === st.id);
+  if (rec) { await openRecent(rec); return; }
+  let c = await idb.get(`remote:${st.id}`);
+  if (!c) {
+    try {
+      const r = await cloudGet(st.id);
+      if (r.status === 200) { c = { rev: r.rev, data: r.data, at: Date.now() }; await idb.set(`remote:${st.id}`, c); }
+    } catch { toast('This story hasn’t been downloaded to this computer yet, and the cloud can’t be reached right now.'); return; }
+  }
+  if (!c) { toast('That story is no longer in the cloud.'); return; }
+  const base = await idb.get(`sync:${st.id}`);
+  const backup = await idb.get(`backup:${st.id}`);
+  // Work done here earlier without a file (e.g. on the last flight) lives in the backup: open that; sync merges.
+  const data = backup && base && !QuireMerge.sameDoc(backup.data, base.data) ? backup.data : c.data;
+  await openProject(data, null, { recoverCheck: false });
+  if (!base) await idb.set(`sync:${st.id}`, { rev: c.rev, data: c.data, at: Date.now() });
+  project.meta.cloud = true;
+  renderStatus();
+  toast(HAS_FS ? 'Opened your cloud story. Save… to also keep it as a file on this computer.' : 'Opened your cloud story.');
+}
+
+/** Is Quire itself available without a connection? */
+async function offlineReady() {
+  if (location.protocol === 'file:') return { ok: true, how: 'Quire is running from a file on this computer, so it always opens offline.' };
+  if (!('serviceWorker' in navigator)) return { ok: false, how: 'This browser can’t keep Quire for offline use. Download Quire.html instead.' };
+  const reg = await navigator.serviceWorker.getRegistration();
+  const keys = 'caches' in window ? await caches.keys() : [];
+  const cached = keys.some((k) => k.startsWith('quire-'));
+  if (reg && reg.active && cached) return { ok: true, how: 'Quire is saved in this browser for offline use.' };
+  return { ok: false, how: 'Quire is still being saved for offline use. Keep this page open for a moment while online.' };
+}
+
+function openCloud() {
+  const cfg = cloudCfg() || {};
+  const url = h('input', { class: 'field', placeholder: 'https://quire.your-name.workers.dev', value: cfg.url || '', spellcheck: 'false' });
+  const key = h('input', { class: 'field', type: 'password', placeholder: 'Sync key', value: cfg.token || '' });
+  const result = h('div', { class: 'hint' });
+  const connect = h('button', { class: 'btn primary', onclick: async () => {
+    const u = url.value.trim().replace(/\/+$/, ''), t = key.value.trim();
+    if (!/^https?:\/\//.test(u) || !t) { result.textContent = 'Enter the server address (starting https://) and the sync key.'; return; }
+    const prev = localStorage.getItem(CLOUD_KEY);
+    localStorage.setItem(CLOUD_KEY, JSON.stringify({ url: u, token: t }));
+    result.textContent = 'Connecting…';
+    connect.disabled = true;
+    try {
+      const r = await api('/ping', { timeout: 10000 });
+      const j = await r.json().catch(() => null);
+      if (!j || !j.ok) throw new Error('That address didn’t answer like a Quire server.');
+      result.textContent = '✓ Connected.';
+      try { navigator.storage?.persist?.(); } catch { /* best effort */ }
+      prefetchCloud();
+      setTimeout(() => { m.close(); openCloud(); }, 400);
+    } catch (e) {
+      if (prev) localStorage.setItem(CLOUD_KEY, prev); else localStorage.removeItem(CLOUD_KEY);
+      result.textContent = e.auth ? 'The server is there, but that sync key is wrong.' : `Couldn’t connect: ${e.message}`;
+    } finally { connect.disabled = false; }
+  } }, cloudOn() ? 'Reconnect' : 'Connect');
+
+  const body = h('div', { class: 'cloud' },
+    h('p', {}, 'Sync keeps a story the same on all your computers, through your own Cloudflare account. Quire always saves to this computer first, so stories open and save offline; changes travel whenever there’s a connection.'),
+    h('div', { class: 'sheet-sec', style: { marginBottom: '14px' } }, h('label', { class: 'sec-label' }, 'Your sync server'),
+      h('div', { class: 'fr' }, url, key, h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, connect, result))));
+
+  if (cloudOn() && project) {
+    const sw = h('button', { class: `switch${project.meta.cloud ? ' on' : ''}`, role: 'switch', 'aria-checked': String(!!project.meta.cloud), 'aria-label': 'Sync this story' });
+    sw.addEventListener('click', () => {
+      project.meta.cloud = !project.meta.cloud;
+      sw.classList.toggle('on', project.meta.cloud);
+      touch();
+      if (project.meta.cloud) syncStory({ force: true }); else setSync('off');
+      m.close(); openCloud();
+    });
+    body.append(h('div', { class: 'sheet-sec', style: { marginBottom: '14px' } }, h('label', { class: 'sec-label' }, 'This story'),
+      h('div', { class: 'pref-row' }, h('span', {}, 'Sync this story'), h('div', {}, sw)),
+      project.meta.cloud ? h('div', { class: 'pref-row' }, h('span', { 'data-live': 'sync' }, syncLabel().text), h('div', { style: { display: 'flex', gap: '6px', justifyContent: 'flex-end' } },
+        h('button', { class: 'btn small', onclick: () => syncStory({ force: true }) }, 'Sync now'),
+        h('button', { class: 'btn small', onclick: () => { m.close(); openCloudHistory(); } }, 'Cloud history…'))) : null));
+  }
+  const ready = h('div', { class: 'hint' }, '…');
+  offlineReady().then(async (r) => {
+    const n = (await idb.keys()).filter((k) => String(k).startsWith('remote:')).length;
+    ready.replaceChildren(`${r.ok ? '✓ ' : ''}${r.how}`, cloudOn() ? h('br') : null, cloudOn() ? `${plural(n, 'cloud story', 'cloud stories')} downloaded to this computer.` : null);
+  });
+  body.append(h('div', { class: 'sheet-sec', style: { marginBottom: 0 } }, h('label', { class: 'sec-label' }, 'Offline on this computer'), ready));
+  const m = modal({
+    title: 'Cloud sync', wide: true, body,
+    actions: [
+      ...(cloudOn() ? [{ label: 'Disconnect this computer', run: () => { localStorage.removeItem(CLOUD_KEY); setSync('off'); toast('This computer no longer syncs. Your stories here are untouched.'); } }] : []),
+      { label: 'Done', primary: true },
+    ],
+  });
+}
+
+async function openCloudHistory() {
+  const id = project.meta.id;
+  let versions;
+  try { versions = (await (await api(`/stories/${encodeURIComponent(id)}/history`)).json()).versions || []; } catch (e) { toast(`Cloud history needs a connection (${e.message}).`); return; }
+  const m = modal({
+    title: 'Cloud history', wide: true,
+    body: h('div', {}, h('p', {}, 'The cloud keeps a version of this story at most every ten minutes (the newest 200). Restoring brings a version back here; Ctrl+Z undoes it.'),
+      versions.length ? h('div', { class: 'snap-list' }, versions.map((v) => h('div', { class: 'snap' }, icon('history'),
+        h('span', {}, new Date(v.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), h('span', { class: 'muted' }, ` · ${plural(v.words, 'word')}`)),
+        h('button', { class: 'btn small', onclick: async () => {
+          try {
+            const data = await (await api(`/stories/${encodeURIComponent(id)}/history/${encodeURIComponent(v.key)}`)).text();
+            m.close();
+            checkpoint('Restore cloud version');
+            const old = normalize(JSON.parse(data));
+            old.meta.cloud = true;
+            replaceProject(old);
+            validateSel(); touch(); renderAll();
+            toast('Restored that version', { label: 'Undo', run: undo });
+          } catch (e) { toast(`Couldn’t restore: ${e.message}`); }
+        } }, 'Restore')))) : h('p', { class: 'muted' }, 'No versions yet.')),
+    actions: [{ label: 'Close', primary: true }],
+  });
 }
 
 /* =========================================================================
@@ -1674,13 +2279,19 @@ function renderStatus() {
   const s = $('#stSave');
   let label, cls = '';
   if (!fileHandle) {
-    if (HAS_FS) { label = 'Not saved to a file yet: Save…'; cls = 'warn'; } else { label = dirty ? 'In browser backup: Download a copy' : `Downloaded ${ago(lastSaved)}`; cls = dirty ? 'warn' : 'ok'; }
+    if (HAS_FS) { label = project.meta.cloud ? 'In browser · Save a file…' : 'Not saved to a file yet: Save…'; cls = 'warn'; } else { label = dirty ? 'In browser backup: Download a copy' : `Downloaded ${ago(lastSaved)}`; cls = dirty ? 'warn' : 'ok'; }
   } else if (saving) label = 'Saving…';
   else if (saveError) { label = 'Couldn’t save. Click to retry'; cls = 'err'; } else if (needsPerm) { label = 'Click to allow saving'; cls = 'warn'; } else if (dirty) label = 'Editing…';
   else { label = `Saved to ${fileName}`; cls = 'ok'; }
   s.textContent = label;
   s.className = `save-state ${cls}`;
   s.title = fileHandle ? `Saving automatically to ${fileName}` : 'Choose where to keep your story';
+  const c = $('#stCloud');
+  const sl = syncLabel();
+  c.hidden = !sl.text;
+  c.textContent = sl.text;
+  c.className = `save-state cloud ${sl.cls}`;
+  c.title = sync.msg || 'Cloud sync';
   document.title = `${dirty ? '• ' : ''}${project.meta.title || 'Untitled'} · Quire`;
 }
 
@@ -1702,6 +2313,15 @@ function commands() {
     cmd('Save', () => saveNow({ interactive: true }), 'Ctrl+S'),
     cmd(HAS_FS ? 'Save as…' : 'Download story file', () => saveAs(), 'Ctrl+Shift+S'),
     cmd('Open a story file…', () => openFile(), 'Ctrl+O'),
+    cmd('Undo (structure: delete, move, split…)', () => undo(), 'Ctrl+Z'),
+    cmd('Redo', () => redo(), 'Ctrl+Shift+Z'),
+    cmd('Split scene at cursor', () => splitScene(), 'Ctrl+Shift+Enter'),
+    cmd('Find and replace', () => openReplace(), 'Ctrl+H'),
+    cmd('Import a Word, Markdown or text file into this story', () => importIntoStory()),
+    cmd('Export manuscript as Word (.docx)', () => exportDocx()),
+    cmd('Cloud sync', () => openCloud()),
+    cmd('Sync now', () => syncStory({ force: true })),
+    cmd('Cloud history', () => openCloudHistory()),
     cmd('Export manuscript as Markdown', () => exportText('md')),
     cmd('Export manuscript as plain text', () => exportText('txt')),
     cmd('Print or save manuscript as PDF', () => printManuscript()),
@@ -1951,8 +2571,14 @@ function mainMenu() {
     { label: 'Save', key: 'Ctrl+S', icon: 'file', run: () => saveNow({ interactive: true }) },
     { label: HAS_FS ? 'Save as…' : 'Download story file', key: 'Ctrl+Shift+S', icon: 'restore', run: saveAs },
     { label: 'Open…', key: 'Ctrl+O', icon: 'folder', run: openFile },
+    { label: 'Cloud sync…', icon: 'cloud', run: openCloud },
+    '-',
+    { label: 'Undo', key: 'Ctrl+Z', disabled: !undoStack.length, run: undo },
+    { label: 'Find and replace…', key: 'Ctrl+H', run: openReplace },
+    { label: 'Import Word, Markdown or text…', run: () => importIntoStory() },
     '-',
     { head: 'Export manuscript' },
+    { label: 'Word (.docx)', run: exportDocx },
     { label: 'Markdown (.md)', run: () => exportText('md') },
     { label: 'Plain text (.txt)', run: () => exportText('txt') },
     { label: 'Print or PDF…', run: printManuscript },
@@ -1960,6 +2586,7 @@ function mainMenu() {
     { label: 'Snapshots…', icon: 'history', run: openSnapshots },
     { label: 'Preferences…', icon: 'spark', run: openPrefs },
     { label: 'Keyboard shortcuts', run: openShortcuts },
+    ...(/^https?:$/.test(location.protocol) ? [{ label: 'Download Quire.html (runs from a file)', run: () => { const a = h('a', { href: 'Quire.html', download: 'Quire.html' }); document.body.append(a); a.click(); a.remove(); } }] : []),
     '-',
     { label: 'Close story', run: closeProject },
   ]);
@@ -1967,7 +2594,8 @@ function mainMenu() {
 function openShortcuts() {
   const rows = [
     ['Ctrl+K', 'Find anything, run any command'], ['Ctrl+S', 'Save now (Quire also saves automatically)'], ['Ctrl+Shift+S', 'Save as…'],
-    ['Ctrl+O', 'Open a story'], ['Ctrl+Enter', 'New scene after this one'], ['Ctrl+Shift+F', 'Focus mode (Esc to leave)'],
+    ['Ctrl+O', 'Open a story'], ['Ctrl+Enter', 'New scene after this one'], ['Ctrl+Shift+Enter', 'Split the scene at the cursor'],
+    ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo (text while typing; otherwise deletes, moves, splits)'], ['Ctrl+H', 'Find and replace'], ['Ctrl+Shift+F', 'Focus mode (Esc to leave)'],
     ['Ctrl+.', 'Scene details panel'], ['Ctrl+\\', 'Sidebar'], ['Alt+1 … Alt+6', 'Manuscript, Board, Story map, Characters, Places, Notes'],
     ['Ctrl+B / Ctrl+I', 'Bold / italic'], ['" \' -- ...', 'Become “curly quotes”, em dashes and ellipses'],
   ];
@@ -2002,20 +2630,38 @@ async function showWelcome() {
       h('button', { class: 'btn primary', onclick: () => { newRow.hidden = false; titleIn.focus(); } }, icon('plus'), 'New story'),
       h('button', { class: 'btn', onclick: openFile }, icon('folder'), 'Open a story…'),
       h('button', { class: 'btn ghost', onclick: () => openProject(sampleProject(), null, { recoverCheck: false }).then(() => toast('This is a sample story. Use Save as… to keep a copy.')) }, icon('spark'), 'Explore a sample')),
-    newRow);
+    newRow,
+    h('p', { class: 'w-import' }, 'Already started somewhere else? ', h('button', { class: 'link', onclick: newFromDraft }, 'Import a draft'), ' from Word, Markdown or a text file.'));
+  const ready = h('div', { class: 'ready' });
+  card.append(ready);
+  offlineReady().then((r) => { ready.replaceChildren(r.ok ? '✓ Ready to work offline' : 'Getting ready for offline use…'); ready.title = r.how; ready.classList.toggle('ok', r.ok); });
 
+  const cloudStories = cloudOn() ? ((await idb.get('cloudlist')) || {}).stories || [] : [];
+  const cloudIds = new Set(cloudStories.map((x) => x.id));
   if (recent.length) {
     card.append(h('div', { class: 'w-section' }, h('h3', {}, 'Recent stories'),
       recent.map((r) => h('button', { class: 'w-item', onclick: () => openRecent(r) }, icon('book'),
-        h('span', { class: 'w-name' }, r.title || r.name), h('span', { class: 'w-meta' }, `${r.name} · ${ago(r.at)}`)))));
+        h('span', { class: 'w-name' }, r.title || r.name), h('span', { class: 'w-meta' }, `${r.name}${cloudIds.has(r.id) ? ' · synced' : ''} · ${ago(r.at)}`)))));
   }
-  const orphans = backups.filter((b) => !recentIds.has(b.id)).slice(0, 6);
+  if (cloudOn()) {
+    const fetched = await idb.get('cloudfetched');
+    const items = [];
+    for (const st of cloudStories.filter((x) => !recentIds.has(x.id))) {
+      const here = await idb.get(`remote:${st.id}`);
+      items.push(h('button', { class: 'w-item', onclick: () => openCloudStory(st), title: here ? 'Downloaded: opens even without a connection' : 'Not downloaded to this computer yet' }, icon('cloud'),
+        h('span', { class: 'w-name' }, st.title || 'Untitled'),
+        h('span', { class: 'w-meta' }, `${plural(st.words, 'word')} · ${here ? 'on this computer' : 'not downloaded yet'}`)));
+    }
+    card.append(h('div', { class: 'w-section' }, h('h3', {}, 'In your cloud', h('span', { class: 'w-when' }, fetched ? ` · checked ${ago(fetched)}` : '')),
+      items.length ? items : h('p', { class: 'muted', style: { margin: '4px 0' } }, cloudStories.length ? 'Every cloud story is in your recent list above.' : 'No stories in the cloud yet. Open a story and turn on sync from Menu › Cloud sync.')));
+  }
+  const orphans = backups.filter((b) => !recentIds.has(b.id) && !cloudIds.has(b.id)).slice(0, 6);
   if (orphans.length) {
     card.append(h('div', { class: 'w-section' }, h('h3', {}, 'Kept in this browser'),
       orphans.map((b) => h('button', { class: 'w-item', title: 'Open the copy Quire keeps in this browser', onclick: () => openProject(b.data, null, { recoverCheck: false }).then(() => toast(HAS_FS ? 'Opened from browser backup. Save… to keep it in a file.' : 'Opened from browser backup.')) },
         icon('history'), h('span', { class: 'w-name' }, b.title || 'Untitled'), h('span', { class: 'w-meta' }, `${plural(b.words, 'word')} · ${ago(b.at)}`)))));
   }
-  card.append(h('p', { class: 'w-foot' }, HAS_FS
+  card.append(h('p', { class: 'w-foot' }, h('button', { class: 'link', onclick: openCloud }, cloudOn() ? 'Cloud sync settings' : 'Set up cloud sync'), ' · ', HAS_FS
     ? [h('b', {}, 'Your story is one file. '), 'Keep it anywhere: a USB stick, Dropbox, OneDrive, iCloud. Quire saves to it as you write, works offline, and keeps backup snapshots in this browser.']
     : [h('b', {}, 'This browser can’t save straight to files. '), 'Quire still works and keeps your writing in this browser, but use Download to keep a file. Chrome or Edge on Windows or Mac gives the full experience.']));
   w.replaceChildren(card);
@@ -2077,6 +2723,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ($('.modal-back')) return;
+  const editing = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  if (mod && k === 'z' && !editing(document.activeElement)) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && k === 'y' && !editing(document.activeElement)) { e.preventDefault(); redo(); return; }
+  if (mod && k === 'h') { e.preventDefault(); openReplace(); return; }
+  if (mod && e.shiftKey && e.key === 'Enter') { e.preventDefault(); splitScene(); return; }
   if (mod && k === 's' && !e.shiftKey) { e.preventDefault(); saveNow({ interactive: true }).then(() => { if (fileHandle && !saveError) toast(`Saved to ${fileName}`); }); } else if (mod && k === 's' && e.shiftKey) { e.preventDefault(); saveAs(); } else if (mod && k === 'k') { e.preventDefault(); openPalette(); } else if (mod && k === 'o') { e.preventDefault(); openFile(); } else if (mod && e.shiftKey && k === 'f') { e.preventDefault(); toggleFocus(); } else if (mod && e.key === '\\') { e.preventDefault(); toggleSidebar(); } else if (mod && e.key === '.') { e.preventDefault(); toggleInspector(); } else if (mod && e.key === 'Enter') { e.preventDefault(); addScene(); } else if (e.altKey && !mod && /^Digit[1-6]$/.test(e.code)) { e.preventDefault(); setView(VIEWS[+e.code.slice(5) - 1][0]); } else if (e.key === 'Escape' && document.body.classList.contains('focus-mode')) { toggleFocus(false); } else if (e.key === 'Escape') closeMenu();
 });
 
@@ -2086,7 +2737,17 @@ window.addEventListener('beforeunload', (e) => {
   if (dirty) { try { localStorage.setItem('quire:emergency', serialize()); } catch { /* too big or blocked */ } }
   if (dirty) { saveNow(); e.preventDefault(); e.returnValue = ''; }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden && project) { flushEditors(); if (dirty) saveNow(); else if (changeSeq) backupNow(); } });
+document.addEventListener('visibilitychange', () => {
+  if (!project) return;
+  if (document.hidden) {
+    flushEditors();
+    if (dirty) saveNow(); else if (changeSeq) backupNow();
+    if (project.meta.cloud) syncStory({ force: true });
+  } else {
+    // Back at the laptop: pick up edits made elsewhere (synced folder or cloud).
+    checkDisk().then(() => { if (project?.meta.cloud) syncStory({ force: true }); });
+  }
+});
 
 // Drop a .quire file anywhere to open it.
 window.addEventListener('dragover', (e) => { if (!drag && e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
@@ -2135,14 +2796,39 @@ function init() {
   if ('launchQueue' in window) {
     window.launchQueue.setConsumer(async (params) => { if (params.files?.length) openHandle(params.files[0]); });
   }
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && $('link[rel="manifest"]')) {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker not registered', e));
-  }
-  recoverEmergency().then(showWelcome);
+  $('#stCloud').onclick = openCloud;
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && $('link[rel="manifest"]')) registerWorker();
+
+  window.addEventListener('online', () => { prefetchCloud(); if (project?.meta.cloud) syncStory({ force: true }); });
+  window.addEventListener('offline', () => { if (project?.meta.cloud) setSync('offline'); });
+  setInterval(() => { if (project?.meta.cloud && !document.hidden) syncStory(); if (project) renderStatus(); }, 60 * 1000);
+  setInterval(prefetchCloud, 5 * 60 * 1000);
+  recoverEmergency().then(showWelcome).then(prefetchCloud);
+}
+
+/** Installed app: keep Quire cached for offline use, and offer updates rather than forcing them. */
+function registerWorker() {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const offer = (w) => toast('A new version of Quire is ready.', { label: 'Update', run: async () => { if (project) await saveNow(); w.postMessage('skipWaiting'); } });
+    if (reg.waiting && hadController) offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
+    });
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });
+    setInterval(() => { if (navigator.onLine) reg.update().catch(() => {}); }, 60 * 60 * 1000);
+    try { navigator.storage?.persist?.(); } catch { /* best effort */ }
+  }).catch((e) => console.warn('Service worker not registered', e));
 }
 
 // A small hook for automated tests and the console. Not part of the file format.
-window.quire = { get project() { return project; }, sanitizeHTML, countWords, openProject, serialize: () => serialize(), sampleProject, version: VERSION };
+window.quire = {
+  get project() { return project; }, get sync() { return { ...sync }; },
+  sanitizeHTML, countWords, openProject, serialize: () => serialize(), sampleProject, version: VERSION,
+  syncStory, prefetchCloud, checkDisk, undo, redo,
+};
 
 init();
 })();

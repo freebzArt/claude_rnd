@@ -1,0 +1,17 @@
+# Quire on Cloudflare: one Worker serves the app and the sync API; stories live in R2.
+# Deploy: see ../docs/cloud-sync.md
+name = "quire"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+# Builds ../dist/web (the installable app) before every deploy.
+[build]
+command = "node ../tools/build.mjs"
+
+[assets]
+directory = "../dist/web"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "STORIES"
+bucket_name = "quire-stories"

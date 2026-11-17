@@ -1,45 +1,47 @@
 # Quire
 
 A quiet, offline-first place to write a story: the manuscript, characters, places
-and plot in one file you own.
+and plot in one file you own, synced between your computers through your own
+Cloudflare account if you want.
 
-- Runs in **Chrome or Edge on Windows and Mac**, straight from a local file. Nothing
-  to install, no account, no internet needed.
-- Your whole story is **one `.quire` file** (plain JSON). Keep it on a USB stick or
-  in OneDrive, Dropbox or iCloud. Quire saves to it as you type.
-- [ROADMAP.md](ROADMAP.md): where this is going (installable app, Cloudflare sync).
-- [docs/file-format.md](docs/file-format.md): what's inside a `.quire` file.
+- Runs in **Chrome or Edge on Windows and Mac**, straight from a local file, or installed as an app.
+- Your whole story is **one `.quire` file** (plain JSON). Quire saves to it as you type.
+- **Offline is normal.** Quire opens and saves from your computer. Cloud sync carries changes
+  between laptops in the background and merges them scene by scene.
+
+| Read | |
+| --- | --- |
+| [docs/cloud-sync.md](docs/cloud-sync.md) | How offline and sync work (the plane scenario), and setting up your Cloudflare server |
+| [ROADMAP.md](ROADMAP.md) | What's done and what's next |
+| [docs/file-format.md](docs/file-format.md) | What's inside a `.quire` file |
 
 ## Try it
 
-1. Download [`dist/Quire.html`](dist/Quire.html). It's a single file with everything inside.
-2. Open it in **Chrome or Edge** (double-click, or right-click > Open with).
-3. Click **Explore a sample** to look around, or **New story** to start your own. New
-   stories ask where to save the `.quire` file first.
+1. Download [`dist/Quire.html`](dist/Quire.html). It's one file with everything inside.
+2. Open it in **Chrome or Edge**.
+3. **Explore a sample**, start a **New story**, or **Import a draft** from Word, Markdown or text.
 
-Tip: bookmark the page, or pin it to the taskbar or Dock (Chrome: ⋮ > Cast, save and
-share > Create shortcut). On each laptop, keep `Quire.html` next to your stories.
+For sync between laptops, follow [docs/cloud-sync.md](docs/cloud-sync.md): about 10 minutes, on
+Cloudflare's free tier.
 
-Firefox and Safari can't write straight to files yet. Quire still works there, but
-you save by downloading a copy.
-
-## What's in the prototype
+## Features
 
 | Area | What you can do |
 | --- | --- |
-| **Manuscript** | Chapters and scenes in a drag-and-drop binder. Write one scene at a time, or a whole chapter or the whole book as one continuous page. |
-| **Writing** | Clean serif page, bold and italic only, smart quotes, `--` to em dash, `...` to ellipsis. Pasting from Word or Google Docs keeps italics and drops the clutter. |
-| **Focus mode** | `Ctrl+Shift+F`: full screen, just the page. The paragraph you're on stays bright, the rest dims, and the line you're typing stays mid-screen. |
-| **Scene details** | Status (idea, draft, revised, final), synopsis, POV, characters, setting, plot threads, when, notes. Quire spots characters and places named in the text and offers to tag them. |
-| **Board** | Index cards per chapter. Drag to reorder. Card edges take the POV character's colour. |
-| **Story map** | A grid of every scene against your plot threads, characters (in scene or POV) and places. Click to mark. Shows at a glance where a thread goes quiet or a character vanishes. |
-| **Characters & places** | A sheet for each, with custom fields (goal, motivation, voice…), aliases, notes, and an automatic "appears in" list. |
-| **Notes** | Research, world rules, stray lines. |
-| **Search** | `Ctrl+K` finds any scene, character, place, note or line of prose, and runs any command. |
-| **Progress** | Word counts per scene, chapter and book; book and daily goals; a 14-day chart (click the story title). |
-| **Safety** | Autosaves to your file. Backs up to the browser too, with a snapshot every 10 minutes (Menu > Snapshots). If the browser holds newer work than the file, Quire offers to recover it. |
-| **Export** | Markdown, plain text, or print / PDF with manuscript formatting. |
-| **Themes** | Paper, Sepia, Night, or follow the system. Choice of typeface, text size, line length and paragraph style. |
+| **Manuscript** | Chapters and scenes in a drag-and-drop binder. Write one scene, a chapter, or the whole book as one page. Split a scene at the cursor (`Ctrl+Shift+Enter`) or merge it with the next. |
+| **Writing** | Clean serif page; bold and italic; smart quotes, `--` to em dash, `...` to ellipsis. Pasting from Word or Google Docs keeps italics and drops the clutter. |
+| **Focus mode** | `Ctrl+Shift+F`: full screen, the current paragraph bright, typewriter scrolling. |
+| **Scene details** | Status, synopsis, POV, characters, setting, plot threads, when, notes. Spots characters and places named in your text. |
+| **Board** | Index cards per chapter; drag to reorder. |
+| **Story map** | Every scene against your plot threads, characters (in scene / POV) and places. |
+| **Characters & places** | Sheets with custom fields, aliases, notes, and an automatic "appears in" list. |
+| **Search & replace** | `Ctrl+K` finds anything and runs any command. `Ctrl+H` replaces across the manuscript (match case, whole words). |
+| **Undo** | `Ctrl+Z` undoes deletes, moves, splits, merges, replace-all and imports, not just typing. |
+| **Import / export** | Import Word (`.docx`), Markdown and text, split into chapters and scenes. Export Word in standard manuscript format, Markdown, text, or print/PDF. |
+| **Safety** | Autosaves to your file. Browser backups, 10-minute snapshots, crash recovery. If the file was changed by another computer (e.g. via Dropbox), Quire merges rather than overwriting. |
+| **Cloud sync** | Your own Cloudflare Worker + R2. Background sync, a three-way merge per scene, both versions kept on real conflicts, every cloud story downloaded for offline, cloud version history. |
+| **Installable** | Hosted on your Cloudflare address it installs as an app: cached for offline, opens `.quire` files, offers updates. |
+| **Progress & looks** | Word counts, book and daily goals, 14-day chart; Paper, Sepia and Night themes; typeface, size, line length. |
 
 ### Keyboard
 
@@ -47,39 +49,52 @@ you save by downloading a copy.
 | --- | --- |
 | `Ctrl+K` | Find anything, run any command |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save now / Save as |
-| `Ctrl+O` | Open a story |
-| `Ctrl+Enter` | New scene after this one |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo (typing while in text; otherwise structure) |
+| `Ctrl+H` | Find and replace |
+| `Ctrl+Enter` / `Ctrl+Shift+Enter` | New scene / split scene at cursor |
 | `Ctrl+Shift+F` | Focus mode (`Esc` to leave) |
-| `Ctrl+.` / `Ctrl+\` | Scene details panel / sidebar |
+| `Ctrl+.` / `Ctrl+\` | Scene details / sidebar |
 | `Alt+1` … `Alt+6` | Manuscript, Board, Story map, Characters, Places, Notes |
 
-On a Mac, `Cmd` works wherever `Ctrl` is listed.
+On a Mac, `Cmd` works wherever `Ctrl` is listed. (`Cmd+H` hides the window on a Mac, so
+use the menu for find and replace there.)
 
-## Known limits of this prototype
+## Layout
 
-- Deleting a scene or chapter can't be undone with `Ctrl+Z`. It asks first, and
-  Snapshots hold earlier versions.
-- If the same file is open in two windows or on two laptops at once, the last save wins.
-  Close it on one machine before writing on the other. Real sync comes in Phase 3.
-- When you reopen a recent story, Chrome may ask once per session to let Quire edit the file.
-- No images yet.
+```
+app/         the app: index.html, styles.css, app.js, merge.js (sync merge), docx.js (Word),
+             sw.js + manifest (installable app)
+cloud/       worker.js (sync API + serves the app) and wrangler.toml (Cloudflare deploy)
+dist/        Quire.html: the single-file build (dist/web/ is built on deploy, not committed)
+docs/        cloud sync, file format
+samples/     The Lantern Keeper.quire
+tools/       build, tests, local dev server
+```
 
-## Developing
+## Developing and testing
 
-The source is plain HTML, CSS and JavaScript in [`app/`](app/), with no framework and no
-dependencies. `dist/Quire.html` is those files inlined into one.
+No framework and no dependencies. Node 18+ and the Playwright browser for tests.
 
 ```bash
-node tools/build.mjs           # app/ -> dist/Quire.html
+node tools/build.mjs              # app/ -> dist/Quire.html and dist/web/
 ```
 
 ```bash
-node tools/smoke.mjs           # headless Chromium end-to-end checks from file://
+node tools/test-merge.mjs         # three-way merge: 14 scenarios
 ```
 
 ```bash
-node tools/make-sample.mjs     # regenerate samples/The Lantern Keeper.quire
+node tools/test-worker.mjs        # sync API against an in-memory R2
 ```
 
-`app/` is also a ready-to-host Progressive Web App (manifest, service worker, `.quire`
-file handler) for Phase 2. Opening `app/index.html` directly also works.
+```bash
+node tools/smoke.mjs              # the app end to end in Chromium, from file://
+```
+
+```bash
+node tools/sync-e2e.mjs           # two laptops, a flight with no network, merge on landing,
+                                  # and the installed app opening with the server switched off
+```
+
+`sync-e2e.mjs --server http://127.0.0.1:8787 --token KEY` runs the same test against
+`npx wrangler dev`, Cloudflare's own runtime.

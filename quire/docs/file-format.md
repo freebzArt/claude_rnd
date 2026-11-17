@@ -13,7 +13,8 @@ and diffs well. The extension is `.quire`; Quire also opens `.json`.
     "title": "The Lantern Keeper",
     "author": "",
     "created": "ISO-8601", "modified": "ISO-8601",
-    "wordGoal": 80000, "dailyGoal": 1000
+    "wordGoal": 80000, "dailyGoal": 1000,
+    "cloud": true             // optional: this story syncs through Quire cloud (docs/cloud-sync.md)
   },
   "manuscript": [             // chapters, in order
     {

@@ -35,84 +35,82 @@ option for Phase 4 if a real need appears.
 
 Prose is stored as a tiny HTML subset (`<p>`, `<em>`, `<strong>`), so formatting survives
 without a heavy editor. Everything has a stable ID, which makes per-scene merge possible
-when sync arrives. Details: [docs/file-format.md](docs/file-format.md).
+for sync. Details: [docs/file-format.md](docs/file-format.md).
 
 ## Phases
 
-### Phase 0: prototype ✅ (this commit)
+### Phase 0: prototype ✅
 
-- Manuscript binder (chapters and scenes), drag to reorder; scene, chapter and whole-book
-  writing views.
-- Distraction-free editor: smart typography, clean paste, focus mode with typewriter
-  scrolling and dimmed paragraphs.
-- Scene details: status, synopsis, POV, cast, setting, plot threads, timeline label,
-  notes; mentions found automatically.
-- Board (index cards), story map (threads, characters and places against scenes),
-  character and place sheets, notes.
-- `Ctrl+K` search and command palette.
-- Autosave to the `.quire` file, browser backups, 10-minute snapshots, crash recovery,
-  recent files.
-- Word counts, goals, 14-day history; Markdown, text and print/PDF export; themes and
-  typography preferences.
-- Headless end-to-end test from `file://`.
+Binder, scene/chapter/book writing, focus mode, scene details, board, story map, character and place
+sheets, notes, `Ctrl+K`, autosave to one file, browser backups and snapshots, goals, exports, themes.
 
-### Phase 1: daily driver (next)
+### Phase 1: daily driver ✅ (the parts that protect your work)
 
-Make it something you trust with a novel.
+- [x] Undo and redo for structure (delete, move, split, merge, replace-all, import, restores), with
+      an Undo button on every delete.
+- [x] Split a scene at the cursor; merge a scene with the next.
+- [x] Find and replace across the manuscript (match case, whole words, per-scene match list).
+- [x] Import `.docx`, `.md` and `.txt`, split into chapters and scenes by headings and `***` / `#`
+      breaks; "Import a draft" starts a new story from one.
+- [x] Export `.docx` in standard manuscript format (Times 12, double-spaced, chapters on new pages).
+- [x] Notice when the file was changed on another computer (e.g. via a synced folder) and merge it
+      in rather than overwriting it.
 
-- [ ] Undo and redo for structure (delete, move, merge), plus a trash for deleted scenes.
-- [ ] Split a scene at the cursor; merge scenes.
-- [ ] Find and replace across the manuscript (whole word, match case).
-- [ ] Import: `.docx`, `.md` and `.txt`, split into chapters and scenes by headings or `***`.
-- [ ] Export: `.docx` (standard manuscript format) and `.epub`.
+Still open, now Phase 4 below:
+
 - [ ] Inline comments and highlights on prose.
-- [ ] Timeline view: scenes ordered by story time (the "When" field) rather than
-      manuscript order.
-- [ ] Character relationships (a simple map), arcs per act.
-- [ ] Per-chapter word targets; writing-session timer; streaks.
-- [ ] Spellcheck language choice; optional British/American quote styles.
-- [ ] Resizable sidebar and details panel; better phone layout.
-- [ ] Warn when the file changed on disk since it was opened (edited on another laptop).
+- [ ] Timeline view ordered by story time.
+- [ ] Character relationship map; arcs per act.
+- [ ] Per-chapter word targets; session timer; streaks.
+- [ ] `.epub` export.
+- [ ] Resizable panels; better phone layout.
 
-### Phase 2: installable app on Cloudflare Pages
+### Phase 2: installable app on Cloudflare ✅
 
-Still local files, but with a real app feel.
+- [x] `cloud/wrangler.toml` deploys the app and the sync API as one Cloudflare Worker (static assets
+      plus API) with a single `npx wrangler deploy`.
+- [x] Installable in Chrome and Edge on Windows and Mac: own window, Start menu or Dock, opens
+      `.quire` files.
+- [x] **Cache-first** service worker: once the welcome screen says "Ready to work offline", the app
+      opens with no network at all (tested with the server switched off). Handles hosts that
+      redirect `/index.html`.
+- [x] Updates download in the background and are offered with an **Update** button, never forced
+      mid-sentence.
+- [x] `Quire.html` downloadable from the site as the zero-install fallback.
 
-- [ ] Deploy `app/` to **Cloudflare Pages** (free) on a domain of your choice.
-- [ ] "Install Quire" in Chrome or Edge gives it its own window, taskbar or Dock icon,
-      and Start-menu entry, on both Windows and Mac.
-- [ ] Service worker caches the app, so it opens offline once installed (already in `app/sw.js`).
-- [ ] File association: double-click a `.quire` file to open it in Quire (already
-      declared in the manifest via `file_handlers`).
-- [ ] Automatic updates whenever a new version is pushed; `dist/Quire.html` stays
-      available as the zero-install fallback.
+### Phase 3: sync through your Cloudflare account ✅
 
-### Phase 3: optional sync through your Cloudflare account
+- [x] R2 bucket, one object per story; Worker API with ETag/`If-Match` revisions so two laptops
+      can't overwrite each other.
+- [x] Sync key (bearer token) auth, so it also works from `Quire.html` opened as a file; optional
+      Cloudflare Access in front of the web app.
+- [x] **Local-first:** opening and saving never wait for the network. Sync runs in the background
+      on edit, every minute, on reconnect, and when you come back to the window.
+- [x] Three-way merge per item (scene, chapter, character, place, thread, note) and per field; tag
+      lists merge as sets; reorders and moves between chapters merge; a scene rewritten on both
+      laptops keeps **both** versions side by side.
+- [x] Every cloud story is downloaded in the background, so the newest version opens on a plane
+      (see [docs/cloud-sync.md](docs/cloud-sync.md)).
+- [x] Cloud version history (one version per 10 minutes, newest 200), restorable from the app;
+      deleted stories go to a trash folder.
+- [x] Tested end to end: two simulated laptops, a flight, simultaneous saves, against both a local
+      server and Cloudflare's own runtime (`wrangler dev`).
+- [ ] End-to-end encryption (key never leaves your devices). Planned; needs a passphrase flow.
+- [ ] Optional D1 index for cross-story search, if you end up with many projects.
 
-For when local files plus OneDrive or Dropbox aren't enough.
+### Phase 4: writing tools
 
-- [ ] **R2 bucket** stores one object per story, with **object versioning** for history.
-- [ ] A small **Worker** API: `GET/PUT /stories/:id` with ETag preconditions.
-- [ ] **Cloudflare Access** (Zero Trust, free tier) for login: no passwords or user
-      code in Quire itself.
-- [ ] Sync model: the local file stays the source of truth while offline; on reconnect,
-      push with `If-Match`. On conflict, merge **per scene** by ID (each scene is a unit,
-      so most edits on two machines don't collide). A real collision keeps both versions
-      side by side.
-- [ ] Optional end-to-end encryption (key never leaves your devices).
-- [ ] Optional **D1** index for cross-story search and stats if you end up with many projects.
+The Phase 1 items still open (comments, timeline, relationships, targets, `.epub`, panels), plus:
 
-Cost estimate: a single writer stays well inside Cloudflare's free tiers.
-
-### Phase 4: only if needed
-
-- Tauri desktop wrapper (about 10 MB) if a native menu bar, OS-level file locking, or
-  offline without any browser becomes important.
-- Opt-in writing assistant, off by default: continuity checks ("what colour did I say
-  her eyes were?"), timeline consistency, a summary of each scene for the board.
+- An opt-in writing assistant, off by default: continuity checks ("what colour did I say her eyes
+  were?"), timeline consistency, a summary of each scene for the board.
+- A Tauri desktop wrapper, only if a native menu bar or OS file locking becomes important.
 
 ## Using it across Windows and Mac today
 
-Keep `Quire.html` and your `.quire` stories in a synced folder (OneDrive, Dropbox or
-iCloud Drive). Open the story on one machine at a time; Quire saves to the file
-continuously, so the sync client picks up each change within seconds.
+- **Cloudflare sync (recommended):** see [docs/cloud-sync.md](docs/cloud-sync.md). Both laptops
+  keep a full local copy, sync in the background, and merge edits scene by scene.
+- **A synced folder (OneDrive, Dropbox, iCloud Drive):** keep your `.quire` file there. If the file
+  changes underneath Quire (because you wrote on the other laptop), Quire now merges that version
+  in instead of overwriting it. But folder sync clients can still create "conflicted copy" files
+  if both laptops save while offline, so Cloudflare sync is the safer choice for writing on planes.

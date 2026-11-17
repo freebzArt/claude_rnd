@@ -32,12 +32,13 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
 await ctx.addInitScript(() => {
   window.__files = {};
+  window.__mtimes = {};
   const handle = (name) => ({
     kind: 'file', name,
     queryPermission: async () => 'granted', requestPermission: async () => 'granted',
     isSameEntry: async (o) => o.name === name,
-    getFile: async () => new File([window.__files[name] || ''], name),
-    createWritable: async () => { let buf = ''; return { write: async (d) => { buf += d; }, close: async () => { window.__files[name] = buf; } }; },
+    getFile: async () => new File([window.__files[name] || ''], name, { lastModified: window.__mtimes[name] || 1 }),
+    createWritable: async () => { let buf = ''; return { write: async (d) => { buf += d; }, close: async () => { window.__files[name] = buf; window.__mtimes[name] = Date.now(); } }; },
   });
   window.showSaveFilePicker = async (o) => handle(o.suggestedName);
   window.showOpenFilePicker = async () => [handle(Object.keys(window.__files)[0])];
@@ -171,12 +172,74 @@ await page.waitForTimeout(200);
 const moved = await page.evaluate(() => window.quire.project.manuscript[1].children.map((s) => s.title));
 check(moved.at(-1) === firstTitle, `drag a scene into another chapter: ${moved.join(', ')}`);
 
-// Delete a scene with words asks first
+// Delete a scene, then undo it
+const exists = (t) => page.evaluate((x) => window.quire.project.manuscript.flatMap((c) => c.children).some((s) => s.title === x), t);
 await page.locator('.b-scene', { hasText: firstTitle }).click({ button: 'right' });
 await page.click('.menu-item:has-text("Delete scene")');
-check(await page.isVisible('.modal'), 'deleting a scene with words asks for confirmation');
-await page.click('.modal .btn:has-text("Cancel")');
-check(await page.evaluate((t) => window.quire.project.manuscript.flatMap((c) => c.children).some((s) => s.title === t), firstTitle), 'cancel keeps the scene');
+check(!(await exists(firstTitle)) && (await page.textContent('#toast')).includes('Undo'), 'delete scene offers Undo');
+await page.locator('#sideList').click({ position: { x: 5, y: 5 } });
+await page.evaluate(() => document.activeElement.blur());
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(100);
+check(await exists(firstTitle), 'Ctrl+Z brings the scene back');
+await page.keyboard.press('Control+Shift+z');
+check(!(await exists(firstTitle)), 'Ctrl+Shift+Z deletes it again');
+await page.keyboard.press('Control+z');
+
+// Split a scene at the cursor, then merge it back
+await page.locator('.b-scene', { hasText: 'Last of the oil' }).click();
+await page.locator('.prose p').nth(2).click({ position: { x: 2, y: 8 } });
+await page.keyboard.press('Home');
+const before2 = await page.evaluate(() => window.quire.project.manuscript.flatMap((c) => c.children).length);
+await page.keyboard.press('Control+Shift+Enter');
+await page.waitForTimeout(150);
+const split = await page.evaluate(() => { const all = window.quire.project.manuscript.flatMap((c) => c.children); const i = all.findIndex((s) => s.title === 'Last of the oil'); return { n: all.length, a: all[i].content, b: all[i + 1].content, t: all[i + 1].title }; });
+check(split.n === before2 + 1 && split.a.includes('Eleven cans') && !split.a.includes('mercury') && split.b.startsWith('<p>Above her') && split.t === 'Last of the oil (continued)', `split at cursor: ${split.t}`);
+await page.locator('.b-scene', { hasText: /^Last of the oil\d/ }).first().click({ button: 'right' });
+await page.click('.menu-item:has-text("Merge with next scene")');
+const merged = await page.evaluate(() => { const all = window.quire.project.manuscript.flatMap((c) => c.children); return { n: all.length, c: all.find((s) => s.title === 'Last of the oil').content }; });
+check(merged.n === before2 && merged.c.includes('Eleven cans') && merged.c.includes('mercury'), 'merge with next joins them back');
+
+// Find and replace
+await page.keyboard.press('Control+h');
+await page.fill('.modal .fr input >> nth=0', 'Wren');
+await page.waitForTimeout(250);
+const info = await page.textContent('.modal .hint');
+await page.fill('.modal .fr input >> nth=1', 'Robin');
+await page.click('.modal .btn:has-text("Replace all")');
+await page.waitForTimeout(100);
+const after = await page.evaluate(() => JSON.stringify(window.quire.project.manuscript));
+check(/\d+ match/.test(info) && !after.includes('Wren counted') && after.includes('Robin counted'), `find and replace across scenes (${info})`);
+await page.locator('#sideList').click({ position: { x: 5, y: 5 } });
+await page.evaluate(() => document.activeElement.blur());
+await page.keyboard.press('Control+z');
+check((await page.evaluate(() => JSON.stringify(window.quire.project.manuscript))).includes('Wren counted'), 'replace all can be undone');
+
+// Word export round trip through import
+const docx = await page.evaluate(async () => {
+  const bytes = QuireDocs.exportDocx(window.quire.project, { countWords: () => 200 });
+  const parsed = await QuireDocs.importDocx(bytes, 'x');
+  return { size: bytes.length, title: parsed.title, chapters: parsed.chapters.map((c) => c.title), firstPara: parsed.chapters[0].scenes[0].html.slice(0, 60), italics: JSON.stringify(parsed).includes('<em>nobody</em>') };
+});
+check(docx.size > 2000 && docx.title === 'The Lantern Keeper' && docx.chapters.join('|') === 'I. The Light|II. The Harbour' && docx.italics, `Word export reads back: ${JSON.stringify(docx)}`);
+const md = await page.evaluate(() => QuireDocs.importText('# My Book\n\n## Chapter 1\n\nIt was *dark*.\n\n***\n\nLater **that** night.\n\n## Chapter 2\n\nEnd.', 'x', true));
+check(md.title === 'My Book' && md.chapters.length === 2 && md.chapters[0].scenes.length === 2 && md.chapters[0].scenes[0].html === '<p>It was <em>dark</em>.</p>', `Markdown import: ${JSON.stringify(md)}`);
+
+// The file changed on disk (another laptop via a synced folder): merged, not overwritten
+await page.evaluate(async () => {
+  const name = 'The Lantern Keeper.quire';
+  const other = JSON.parse(window.__files[name]);
+  other.manuscript[1].children[0].content = '<p>Written on the other laptop.</p>';
+  window.__files[name] = JSON.stringify(other);
+  window.__mtimes[name] = Date.now() + 5000;
+});
+await page.locator('.b-scene', { hasText: 'A boat in the fog' }).click();
+await page.locator('.prose').first().click();
+await page.keyboard.press('Control+End');
+await page.keyboard.type(' Local words.', { delay: 5 });
+await page.waitForTimeout(2600);
+const diskMerged = await page.evaluate(() => window.__files['The Lantern Keeper.quire']);
+check(diskMerged.includes('Written on the other laptop.') && diskMerged.includes('Local words.'), 'edits made to the file elsewhere are merged in, not overwritten');
 
 // Paste rich text from another app
 await page.locator('.b-scene', { hasText: 'Ansel' }).click();
