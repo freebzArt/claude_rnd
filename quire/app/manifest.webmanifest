@@ -1,0 +1,16 @@
+{
+  "name": "Quire",
+  "short_name": "Quire",
+  "description": "A quiet, offline-first place to write your story.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f5f0",
+  "theme_color": "#f7f5f0",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/json": [".quire"] } }
+  ]
+}

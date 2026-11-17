@@ -109,3 +109,7 @@ tests/  unit, accuracy and end-to-end tests
 docs/   conventions, file formats, Nuke check, roadmap page
 tools/  host-side scripts (Nuke check)
 ```
+
+## Also in this repository
+
+- [quire/](quire/): Quire, an offline-first writing app for long-form fiction (manuscript, characters, places, plot map) that saves to one `.quire` file.

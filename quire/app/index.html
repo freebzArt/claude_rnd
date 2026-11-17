@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quire</title>
+  <meta name="description" content="Quire: a quiet, offline-first place to write your story.">
+  <!--pwa-->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <!--/pwa-->
+  <meta name="theme-color" content="#f7f5f0">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="welcome-open">
+
+<div id="app">
+  <aside id="sidebar">
+    <header class="side-head">
+      <button id="projTitle" class="proj-title" title="Story details"></button>
+    </header>
+    <nav class="modes" id="modes"></nav>
+    <div class="side-list" id="sideList"></div>
+    <footer class="side-foot" id="sideFoot"></footer>
+  </aside>
+
+  <main id="main">
+    <div id="toolbar">
+      <button class="icon-btn" id="tbSidebar" title="Toggle sidebar (Ctrl+\)"></button>
+      <div class="crumb" id="crumb"></div>
+      <button class="icon-btn" id="tbSearch" title="Search and commands (Ctrl+K)"></button>
+      <button class="icon-btn" id="tbFocus" title="Focus mode (Ctrl+Shift+F)"></button>
+      <button class="icon-btn" id="tbInspector" title="Scene details (Ctrl+.)"></button>
+      <button class="icon-btn" id="tbMenu" title="Menu"></button>
+    </div>
+    <div id="view"></div>
+    <div id="statusbar">
+      <span id="stCounts"></span>
+      <span id="stToday" class="hide-narrow"></span>
+      <span class="grow"></span>
+      <button id="stSave" class="save-state"></button>
+    </div>
+  </main>
+
+  <aside id="inspector"></aside>
+</div>
+
+<div id="welcome"></div>
+<div id="dropline"></div>
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

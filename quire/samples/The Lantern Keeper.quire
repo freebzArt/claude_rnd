@@ -1,0 +1,271 @@
+{
+  "format": "quire",
+  "version": 1,
+  "app": "Quire 0.1.0",
+  "meta": {
+    "id": "pkxac4ysmkp",
+    "title": "The Lantern Keeper",
+    "author": "A. Writer",
+    "created": "2026-11-17T17:26:50.953Z",
+    "modified": "2026-11-17T17:26:50.953Z",
+    "wordGoal": 60000,
+    "dailyGoal": 1000
+  },
+  "manuscript": [
+    {
+      "id": "casb10ysmkp",
+      "title": "I. The Light",
+      "synopsis": "",
+      "notes": "",
+      "children": [
+        {
+          "id": "sn6s1rasmkp",
+          "title": "Last of the oil",
+          "status": "revised",
+          "synopsis": "Wren measures the paraffin and does the arithmetic she has been avoiding.",
+          "pov": "chk9h378smkp",
+          "characters": [
+            "chk9h378smkp"
+          ],
+          "location": "lojw4563smkp",
+          "threads": [
+            "tjdm8losmkp",
+            "tpmdxqksmkp"
+          ],
+          "when": "Day 1, dusk",
+          "notes": "",
+          "content": "<p>There were eleven cans left in the oil store, and Wren counted them twice because the first time she had come up with twelve and wanted to be wrong.</p><p>Eleven cans. Four nights to a can, if she trimmed the wick the way her father had shown her, low and blue and miserly. Forty-four nights. The relief keeper was due in thirty. She had told herself that so often it had worn smooth, like a stone she kept in her pocket.</p><p>Above her the lens turned on its bath of mercury, patient as a clock, throwing its long arm out across the water to <em>nobody</em>. That was the part no one in Port Caddow understood. You did not keep the light for the ships you could see.</p><p>She shut the store, climbed the hundred and fourteen steps, and lit the lamp at six minutes past four, exactly as the tables said.</p>"
+        },
+        {
+          "id": "slym4kasmkp",
+          "title": "A boat in the fog",
+          "status": "draft",
+          "synopsis": "A rowing boat with no oars drifts onto the rocks. There is a man in it, and he is not cold.",
+          "pov": "chk9h378smkp",
+          "characters": [
+            "chk9h378smkp",
+            "chxj83mksmkp"
+          ],
+          "location": "lojw4563smkp",
+          "threads": [
+            "t9ejiy4smkp"
+          ],
+          "when": "Day 2, before dawn",
+          "notes": "",
+          "content": "<p>The fog came in before dawn the way it always did in October, not rolling but simply <em>arriving</em>, as if the sea had breathed out.</p><p>Wren heard the boat before she saw it: wood on rock, a slow grinding knock, like someone at a door who knows they will be let in.</p>"
+        }
+      ]
+    },
+    {
+      "id": "cruhafgsmkp",
+      "title": "II. The Harbour",
+      "synopsis": "",
+      "notes": "",
+      "children": [
+        {
+          "id": "snudtlksmkp",
+          "title": "Ansel’s warning",
+          "status": "draft",
+          "synopsis": "The harbourmaster rows out to tell Wren the Trinity Board means to shut the light. She tells him about the stranger instead. Mistake.",
+          "pov": "chk9h378smkp",
+          "characters": [
+            "chk9h378smkp",
+            "chwy2w1lsmkp"
+          ],
+          "location": "lojw4563smkp",
+          "threads": [
+            "tjdm8losmkp",
+            "t9ejiy4smkp"
+          ],
+          "when": "Day 2, noon",
+          "notes": "",
+          "content": "<p><br></p>"
+        },
+        {
+          "id": "s9chc17smkp",
+          "title": "What the tide brought",
+          "status": "idea",
+          "synopsis": "In Port Caddow, Ansel finds something on the strand that should have gone down with Wren’s father.",
+          "pov": "chwy2w1lsmkp",
+          "characters": [
+            "chwy2w1lsmkp"
+          ],
+          "location": "losub209smkp",
+          "threads": [
+            "t9ejiy4smkp",
+            "tpmdxqksmkp"
+          ],
+          "when": "Day 2, evening",
+          "notes": "",
+          "content": "<p><br></p>"
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "Wren Halloway",
+      "role": "Protagonist",
+      "color": "#b0643c",
+      "aliases": "the keeper’s girl",
+      "summary": "Seventeen, stubborn, keeping her dead father’s lighthouse lit because nobody told her to stop.",
+      "fields": [
+        {
+          "k": "Goal",
+          "v": "Keep the light burning until the relief keeper comes."
+        },
+        {
+          "k": "Motivation",
+          "v": "If the light goes out, then he is really gone."
+        },
+        {
+          "k": "Conflict",
+          "v": "The oil is running out, and the harbour wants the light shut."
+        },
+        {
+          "k": "Appearance",
+          "v": "Salt-stiff braid, her father’s oilskin, cuffs rolled four times."
+        },
+        {
+          "k": "Voice",
+          "v": "Short sentences. Counts things when she is scared."
+        }
+      ],
+      "notes": "",
+      "id": "chk9h378smkp"
+    },
+    {
+      "name": "Ansel Marr",
+      "role": "Harbourmaster",
+      "color": "#4f7f8f",
+      "aliases": "the harbourmaster",
+      "summary": "Kind in the way of men who have already decided what is best for you.",
+      "fields": [
+        {
+          "k": "Goal",
+          "v": "Close Skerry Light and bring Wren ashore."
+        },
+        {
+          "k": "Motivation",
+          "v": "He owes her father a debt nobody knows about."
+        },
+        {
+          "k": "Conflict",
+          "v": "Wren will not leave."
+        },
+        {
+          "k": "Appearance",
+          "v": ""
+        },
+        {
+          "k": "Voice",
+          "v": "Calls everyone “lass” or “lad”. Never raises his voice."
+        }
+      ],
+      "notes": "",
+      "id": "chwy2w1lsmkp"
+    },
+    {
+      "name": "The Grey Man",
+      "role": "Stranger",
+      "color": "#8a5c9c",
+      "aliases": "the stranger",
+      "summary": "Came out of the fog in a boat with no oars. Knows the name of every keeper since 1840.",
+      "fields": [
+        {
+          "k": "Goal",
+          "v": "?"
+        },
+        {
+          "k": "Appearance",
+          "v": "Wet wool, no shoes, eyes the colour of the fog."
+        }
+      ],
+      "notes": "Do not explain him too early.",
+      "id": "chxj83mksmkp"
+    }
+  ],
+  "locations": [
+    {
+      "name": "Skerry Light",
+      "role": "Lighthouse",
+      "color": "#c09238",
+      "aliases": "the light, the tower",
+      "summary": "A white tower on a black rock, a mile and a half off Port Caddow.",
+      "fields": [
+        {
+          "k": "Atmosphere",
+          "v": "Paraffin, wet stone, the clock-tick of the lens turning."
+        },
+        {
+          "k": "Sights & sounds",
+          "v": "114 steps. The gallery rail sings in a westerly."
+        },
+        {
+          "k": "Significance",
+          "v": "The last place her father was alive."
+        }
+      ],
+      "notes": "",
+      "id": "lojw4563smkp"
+    },
+    {
+      "name": "Port Caddow",
+      "role": "Fishing village",
+      "color": "#7b8f4c",
+      "aliases": "the harbour, Caddow",
+      "summary": "Forty houses, two chapels, one opinion about everything.",
+      "fields": [
+        {
+          "k": "Atmosphere",
+          "v": "Herring, tar, gossip."
+        },
+        {
+          "k": "Sights & sounds",
+          "v": "Gulls, the bell on the breakwater."
+        },
+        {
+          "k": "Significance",
+          "v": "Where everyone thinks Wren belongs."
+        }
+      ],
+      "notes": "",
+      "id": "losub209smkp"
+    }
+  ],
+  "threads": [
+    {
+      "name": "The stranger’s secret",
+      "color": "#8a5c9c",
+      "summary": "Who is the Grey Man, and why has he come to Skerry now?",
+      "id": "t9ejiy4smkp"
+    },
+    {
+      "name": "Wren and her father",
+      "color": "#b0643c",
+      "summary": "Grief, and the letting go she keeps refusing.",
+      "id": "tjdm8losmkp"
+    },
+    {
+      "name": "The storm",
+      "color": "#566fb0",
+      "summary": "A three-day gale is coming. The light must hold.",
+      "id": "tpmdxqksmkp"
+    }
+  ],
+  "notes": [
+    {
+      "title": "Rules of the light",
+      "content": "<p>Lamp lit at sunset, by the tables. Never late.</p><p>Wick trimmed every four hours.</p><p>The log is written in ink, never pencil, and never torn.</p><p><em>Ideas:</em> the log could be how the Grey Man proves who he is.</p>",
+      "id": "n84vm4rsmkp"
+    }
+  ],
+  "stats": {
+    "daily": {
+      "2026-11-17": {
+        "start": 203,
+        "end": 203
+      }
+    }
+  }
+}
