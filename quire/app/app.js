@@ -881,7 +881,6 @@ function renderWrite() {
       h('div', { class: 'eyebrow' }, l.ch.title || 'Untitled chapter'),
       bound(l.scene, 'title', { class: 'plain doc-title', placeholder: 'Untitled scene' }, softSidebar),
       editorFor(l.scene),
-      h('div', { class: 'add-under' }, h('button', { class: 'btn ghost small', onclick: () => addScene(l.ch.id, l.index + 1) }, icon('plus'), 'New scene after this')),
     );
   } else if (kind === 'chapter') {
     const ch = chapterOf(id);
